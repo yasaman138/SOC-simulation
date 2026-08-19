@@ -5,7 +5,7 @@
 set -euo pipefail
 
 echo "======================================================================"
-echo "Initializing Enterprise Attack Detection & Response Lab (Phase 1)"
+echo "Initializing Enterprise Attack Detection & Response Lab"
 echo "======================================================================"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
