@@ -63,6 +63,6 @@ DC=corp,DC=enterprise,DC=local
 
 ## 4. Kerberoasting and SPN Configuration
 
-Service accounts `svc_sql` and `svc_backup` have registered Service Principal Names (SPNs). In subsequent phases, these accounts serve as targets for Kerberoasting attack simulations (TGS-REQ ticket harvesting and offline hash cracking).
+Service accounts `svc_sql` and `svc_backup` have registered Service Principal Names (SPNs). These accounts serve as targets for Kerberoasting attack simulations (TGS-REQ ticket harvesting and offline hash cracking).
 
 When Kerberos TGS tickets are requested for these SPNs, the Domain Controller emits Windows Event ID `4769` (*A Kerberos service ticket was requested*), providing telemetry for detection engineering.
