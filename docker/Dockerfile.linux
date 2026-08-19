@@ -1,0 +1,18 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    rsyslog \
+    curl \
+    iputils-ping \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir /var/run/sshd
+RUN useradd -m -s /bin/bash sysadmin && echo "sysadmin:LinuxAdminLab2026!" | chpasswd
+RUN useradd -m -s /bin/bash analyst && echo "analyst:AnalystLabReadOnly!" | chpasswd
+
+EXPOSE 2222
+
+CMD ["/usr/sbin/sshd", "-D", "-p", "2222"]
