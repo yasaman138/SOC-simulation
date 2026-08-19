@@ -23,6 +23,9 @@ class EventCategory(str, Enum):
     PROCESS = "process"
     DIRECTORY_SERVICE = "directory_service"
     SYSTEM = "system"
+    FILE = "file"
+    REGISTRY = "registry"
+    DNS = "dns"
 
 
 class EventOutcome(str, Enum):
@@ -53,8 +56,13 @@ class UserInfo(BaseModel):
 class ProcessInfo(BaseModel):
     name: Optional[str] = None
     pid: Optional[int] = None
+    ppid: Optional[int] = None
     command_line: Optional[str] = None
     executable: Optional[str] = None
+    parent_name: Optional[str] = None
+    parent_command_line: Optional[str] = None
+    hash: Optional[str] = None
+    integrity_level: Optional[str] = None
 
 
 class HTTPInfo(BaseModel):
@@ -62,6 +70,37 @@ class HTTPInfo(BaseModel):
     url: Optional[str] = None
     status_code: Optional[int] = None
     user_agent: Optional[str] = None
+
+
+class NetworkInfo(BaseModel):
+    transport: Optional[str] = "tcp"
+    protocol: Optional[str] = None
+    direction: Optional[str] = None
+    bytes: Optional[int] = None
+    packets: Optional[int] = None
+
+
+class DNSInfo(BaseModel):
+    query_name: Optional[str] = None
+    query_type: Optional[str] = None
+    resolved_ips: List[str] = Field(default_factory=list)
+    response_code: Optional[str] = None
+
+
+class FileInfo(BaseModel):
+    path: Optional[str] = None
+    name: Optional[str] = None
+    extension: Optional[str] = None
+    size: Optional[int] = None
+    hash: Optional[str] = None
+    action: Optional[str] = None
+
+
+class RegistryInfo(BaseModel):
+    key: Optional[str] = None
+    value_name: Optional[str] = None
+    value_data: Optional[str] = None
+    action: Optional[str] = None
 
 
 class EventMetadata(BaseModel):
@@ -87,7 +126,13 @@ class ECSEvent(BaseModel):
     user: Optional[UserInfo] = None
     process: Optional[ProcessInfo] = None
     http: Optional[HTTPInfo] = None
+    network: Optional[NetworkInfo] = None
+    dns: Optional[DNSInfo] = None
+    file: Optional[FileInfo] = None
+    registry: Optional[RegistryInfo] = None
     message: str = ""
+    raw_event: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
     custom: Dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
