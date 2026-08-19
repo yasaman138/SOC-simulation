@@ -58,46 +58,47 @@ class AlertStore:
                     return True
         return False
 
-    def query_alerts(self, query: AlertQuery) -> List[Alert]:
+    def query_alerts(self, query: Optional[AlertQuery] = None) -> List[Alert]:
         """Filter alerts matching search and filter criteria."""
+        q = query or AlertQuery(limit=max(self.count(), 100))
         with self._lock:
             results = self._alerts[:]
 
-        if query.severity:
-            results = [a for a in results if a.severity == query.severity]
-        if query.rule_id:
+        if q.severity:
+            results = [a for a in results if a.severity == q.severity]
+        if q.rule_id:
             results = [
                 a
                 for a in results
-                if query.rule_id.lower() in a.rule_id.lower()
+                if q.rule_id.lower() in a.rule_id.lower()
             ]
-        if query.status:
-            results = [a for a in results if a.status == query.status]
-        if query.host_name:
+        if q.status:
+            results = [a for a in results if a.status == q.status]
+        if q.host_name:
             results = [
                 a
                 for a in results
                 if a.affected_entities.host
-                and query.host_name.lower()
+                and q.host_name.lower()
                 in a.affected_entities.host.lower()
             ]
-        if query.user_name:
+        if q.user_name:
             results = [
                 a
                 for a in results
                 if a.affected_entities.user
-                and query.user_name.lower()
+                and q.user_name.lower()
                 in a.affected_entities.user.lower()
             ]
-        if query.source_ip:
+        if q.source_ip:
             results = [
                 a
                 for a in results
                 if a.affected_entities.ip
-                and query.source_ip == a.affected_entities.ip
+                and q.source_ip == a.affected_entities.ip
             ]
-        if query.search:
-            s = query.search.lower()
+        if q.search:
+            s = q.search.lower()
             results = [
                 a
                 for a in results
@@ -117,8 +118,8 @@ class AlertStore:
         # Reverse sort by timestamp (newest alerts first)
         results.sort(key=lambda x: x.timestamp, reverse=True)
 
-        start = query.offset
-        end = start + query.limit
+        start = q.offset
+        end = start + q.limit
         return results[start:end]
 
     def count(self) -> int:
