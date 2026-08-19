@@ -6,7 +6,7 @@ The lab implements a centralized telemetry ingestion pipeline designed around th
 
 ---
 
-## 2. Telemetry Ingestion Pipeline
+## 2. Telemetry Ingestion & Detection Pipeline
 
 ```
 +--------------------------+
@@ -28,8 +28,14 @@ The lab implements a centralized telemetry ingestion pipeline designed around th
                                                                                 |
                                                                                 v
                                                                    +--------------------+
-                                                                   | Security Analytics |
-                                                                   | & Detection Rules  |
+                                                                   |  Detection Engine  |
+                                                                   | (21+ MITRE Rules)  |
+                                                                   +---------+----------+
+                                                                                |
+                                                                                v
+                                                                   +--------------------+
+                                                                   |    Alert Store     |
+                                                                   |  & Triage Endpoints|
                                                                    +--------------------+
 ```
 
@@ -73,6 +79,8 @@ Every ingested event conforms to the following core ECS structure:
     "pid": 680
   },
   "message": "Logon failure for user 'jdoe': Bad password.",
+  "raw_event": "<Event xmlns=...>",
+  "tags": ["active_directory", "authentication"],
   "custom": {
     "windows": {
       "event_id": 4625,
@@ -96,9 +104,22 @@ Every ingested event conforms to the following core ECS structure:
 
 ## 5. SIEM Collector API Endpoints
 
-- `GET /health`: Healthcheck and status of event ingestion.
-- `POST /api/v1/events`: Ingest single ECS event.
+- `GET /health`: Healthcheck and status of event ingestion, detection engine, and alert count.
+- `POST /api/v1/events`: Ingest single ECS event and evaluate detection rules in real time.
 - `POST /api/v1/events/batch`: Ingest multiple ECS events in batch.
 - `GET /api/v1/events`: Filtered query of stored security events (filter by category, action, severity, hostname, username, IP, or search string).
 - `GET /api/v1/stats`: Telemetry count summary grouped by category and severity.
 - `DELETE /api/v1/events`: Reset event store during lab reset and testing.
+
+---
+
+## 6. Detection & Alerting API Endpoints
+
+- `GET /api/v1/detections`: List all registered detection rules with MITRE ATT&CK mappings.
+- `GET /api/v1/detections/{rule_id}`: Retrieve metadata for a specific detection rule.
+- `POST /api/v1/detections/evaluate`: Trigger detection analysis across stored telemetry events.
+- `GET /api/v1/alerts`: Query generated security alerts with multi-attribute filtering.
+- `GET /api/v1/alerts/{alert_id}`: Retrieve detailed alert record with context and source events.
+- `PATCH /api/v1/alerts/{alert_id}`: Update alert triage status (`triaged`, `investigating`, `contained`, `closed`, `false_positive`).
+- `GET /api/v1/alerts/stats`: Metrics summary of alerts grouped by severity, tactic, and rule.
+- `DELETE /api/v1/alerts`: Reset alert store during lab reset and testing.
