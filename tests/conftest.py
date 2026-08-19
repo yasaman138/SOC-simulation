@@ -11,6 +11,8 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from src.core.config import LabSettings
 from src.core.topology import EnterpriseLabTopology
+from src.detection.engine import DetectionEngine
+from src.detection.storage import AlertStore
 from src.infra.ad_directory.server import ActiveDirectoryServer
 from src.infra.linux_server.service import LinuxServerService
 from src.siem.app import create_siem_app
@@ -31,14 +33,25 @@ def event_store():
 
 
 @pytest.fixture
-def siem_collector(event_store):
-    return SIEMCollector(store=event_store)
+def alert_store():
+    return AlertStore(max_capacity=1000)
 
 
 @pytest.fixture
-def siem_client(siem_collector, event_store):
-    app = create_siem_app()
-    # inject test store into app
+def detection_engine(alert_store):
+    return DetectionEngine(alert_store=alert_store)
+
+
+@pytest.fixture
+def siem_collector(event_store, detection_engine):
+    return SIEMCollector(store=event_store, detection_engine=detection_engine)
+
+
+@pytest.fixture
+def siem_client(siem_collector, event_store, detection_engine, alert_store):
+    app = create_siem_app(
+        store=event_store, engine=detection_engine, alerts=alert_store
+    )
     return TestClient(app)
 
 
