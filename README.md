@@ -1,6 +1,5 @@
 # Enterprise Attack Detection & Response Lab
 
-[![Phase](https://img.shields.io/badge/Phase-01%20Foundation%20%26%20Infrastructure-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Security](https://img.shields.io/badge/Security-Isolated%20Lab-green.svg)](#)
 [![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)](#)
@@ -47,7 +46,7 @@ graph TD
 
 ---
 
-## Features (Phase 1 Deliverables)
+## Core Features & Capabilities
 
 - **Network Topology & Trust Boundaries**: 4 segmented subnets (`simulation_net`, `corp_internal_net`, `app_tier_net`, `secmon_net`) with automated policy validation.
 - **Active Directory Infrastructure**: `CORP.ENTERPRISE.LOCAL` domain hierarchy with multi-tiered OUs, privileged administrators (`da_johnson`, `ea_miller`), service identities with SPNs (`svc_sql`, `svc_backup`), and Windows Security EventLog simulation (Event IDs 4624, 4625, 4768, 4769).
