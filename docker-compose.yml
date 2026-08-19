@@ -1,0 +1,186 @@
+version: '3.8'
+
+networks:
+  simulation_net:
+    name: lab_simulation_net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.10.0/24
+          gateway: 172.28.10.1
+
+  corp_internal_net:
+    name: lab_corp_internal_net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.20.0/24
+          gateway: 172.28.20.1
+
+  app_tier_net:
+    name: lab_app_tier_net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.30.0/24
+          gateway: 172.28.30.1
+
+  secmon_net:
+    name: lab_secmon_net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.90.0/24
+          gateway: 172.28.90.1
+
+services:
+  # ============================================================================
+  # Security & Monitoring Tier
+  # ============================================================================
+  siem-collector:
+    container_name: lab-siem-collector
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.siem
+    hostname: siem.secmon.local
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - LAB_ENVIRONMENT=development
+      - SIEM_HOST=0.0.0.0
+      - SIEM_HTTP_PORT=8088
+      - SIEM_SYSLOG_UDP_PORT=5514
+    ports:
+      - "8088:8088"
+      - "5514:5514/udp"
+    networks:
+      secmon_net:
+        ipv4_address: 172.28.90.10
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8088/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================================
+  # Corporate Internal Tier (Active Directory & Linux Infrastructure)
+  # ============================================================================
+  ad-dc01:
+    container_name: lab-ad-dc01
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ad
+    hostname: dc01.corp.enterprise.local
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - AD_DOMAIN_NAME=CORP.ENTERPRISE.LOCAL
+      - AD_NETBIOS_NAME=CORP
+      - AD_DC_IP=172.28.20.10
+      - SIEM_ENDPOINT=http://172.28.90.10:8088/api/v1/events
+    networks:
+      corp_internal_net:
+        ipv4_address: 172.28.20.10
+      secmon_net:
+        ipv4_address: 172.28.90.20
+    depends_on:
+      - siem-collector
+    restart: unless-stopped
+
+  linux-srv01:
+    container_name: lab-linux-srv01
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.linux
+    hostname: linux-srv01.corp.enterprise.local
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - LINUX_SRV_IP=172.28.20.15
+      - SIEM_SYSLOG_TARGET=172.28.90.10:5514
+    ports:
+      - "2222:2222"
+    networks:
+      corp_internal_net:
+        ipv4_address: 172.28.20.15
+      secmon_net:
+        ipv4_address: 172.28.90.15
+    depends_on:
+      - siem-collector
+    restart: unless-stopped
+
+  # ============================================================================
+  # Application & Database Tier
+  # ============================================================================
+  app-db:
+    container_name: lab-app-db
+    image: postgres:15-alpine
+    hostname: db01.app.local
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - POSTGRES_DB=app_portal
+      - POSTGRES_USER=app_user
+      - POSTGRES_PASSWORD=labAppDbPassword2026!
+    networks:
+      app_tier_net:
+        ipv4_address: 172.28.30.20
+    restart: unless-stopped
+
+  vulnapp:
+    container_name: lab-vulnapp-portal
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    hostname: portal.app.local
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+      - APP_DB_URL=postgresql://app_user:labAppDbPassword2026!@172.28.30.20:5432/app_portal
+      - SIEM_ENDPOINT=http://172.28.90.10:8088/api/v1/events
+      - ENABLE_VULNERABILITIES=true
+    ports:
+      - "8000:8000"
+    networks:
+      app_tier_net:
+        ipv4_address: 172.28.30.10
+      secmon_net:
+        ipv4_address: 172.28.90.30
+    depends_on:
+      - app-db
+      - siem-collector
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================================
+  # External / Simulation Tier (Edge Gateway)
+  # ============================================================================
+  edge-proxy:
+    container_name: lab-edge-proxy
+    image: nginx:alpine
+    hostname: edge-proxy.lab.local
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "8080:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      simulation_net:
+        ipv4_address: 172.28.10.5
+      app_tier_net:
+        ipv4_address: 172.28.30.5
+    depends_on:
+      - vulnapp
+    restart: unless-stopped
