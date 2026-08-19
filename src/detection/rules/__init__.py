@@ -12,6 +12,23 @@ from src.detection.rules.credential_access import (
     LinuxShadowFileAccessRule,
     LSASSDumpDetectionRule,
 )
+from src.detection.rules.c2 import (
+    C2BeaconingCommunicationRule,
+    IngressToolTransferRule,
+)
+from src.detection.rules.collection import (
+    DataStagingAndArchiveRule,
+    SensitiveDataHarvestingRule,
+)
+from src.detection.rules.discovery import (
+    ActiveDirectoryDiscoveryRule,
+    NetworkPortScanDiscoveryRule,
+    SystemInfoDiscoveryRule,
+)
+from src.detection.rules.impact import (
+    DataDestructionRansomwareRule,
+    ServiceTerminationRule,
+)
 from src.detection.rules.lateral_movement import (
     CrossSubnetSSHLateralRule,
     RemoteServiceExecutionRule,
@@ -70,4 +87,17 @@ def get_default_rules() -> List[DetectionRule]:
         LinuxCronPersistenceRule(),
         RegistryRunKeyPersistenceRule(),
         BackdoorAccountCreationRule(),
+        # Discovery
+        ActiveDirectoryDiscoveryRule(),
+        NetworkPortScanDiscoveryRule(),
+        SystemInfoDiscoveryRule(),
+        # Command and Control
+        IngressToolTransferRule(),
+        C2BeaconingCommunicationRule(),
+        # Collection
+        DataStagingAndArchiveRule(),
+        SensitiveDataHarvestingRule(),
+        # Impact
+        ServiceTerminationRule(),
+        DataDestructionRansomwareRule(),
     ]
