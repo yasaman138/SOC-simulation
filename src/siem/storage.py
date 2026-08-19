@@ -34,46 +34,47 @@ class EventStore:
                 ids.append(ev.event.id)
         return ids
 
-    def query_events(self, query: EventQuery) -> List[ECSEvent]:
+    def query_events(self, query: Optional[EventQuery] = None) -> List[ECSEvent]:
         """Filter events matching the query criteria."""
+        q = query or EventQuery(limit=max(self.count(), 100))
         with self._lock:
             results = self._events[:]
 
         # Apply filters
-        if query.category:
-            results = [e for e in results if e.event.category == query.category]
-        if query.action:
+        if q.category:
+            results = [e for e in results if e.event.category == q.category]
+        if q.action:
             results = [
                 e
                 for e in results
-                if query.action.lower() in e.event.action.lower()
+                if q.action.lower() in e.event.action.lower()
             ]
-        if query.severity:
-            results = [e for e in results if e.event.severity == query.severity]
-        if query.host_name:
+        if q.severity:
+            results = [e for e in results if e.event.severity == q.severity]
+        if q.host_name:
             results = [
                 e
                 for e in results
                 if e.host
                 and e.host.name
-                and query.host_name.lower() in e.host.name.lower()
+                and q.host_name.lower() in e.host.name.lower()
             ]
-        if query.source_ip:
+        if q.source_ip:
             results = [
                 e
                 for e in results
-                if e.source and e.source.ip and query.source_ip == e.source.ip
+                if e.source and e.source.ip and q.source_ip == e.source.ip
             ]
-        if query.user_name:
+        if q.user_name:
             results = [
                 e
                 for e in results
                 if e.user
                 and e.user.name
-                and query.user_name.lower() in e.user.name.lower()
+                and q.user_name.lower() in e.user.name.lower()
             ]
-        if query.search:
-            s = query.search.lower()
+        if q.search:
+            s = q.search.lower()
             results = [
                 e
                 for e in results
@@ -86,8 +87,8 @@ class EventStore:
         # Reverse sort by timestamp (newest first)
         results.sort(key=lambda x: x.timestamp, reverse=True)
 
-        start = query.offset
-        end = start + query.limit
+        start = q.offset
+        end = start + q.limit
         return results[start:end]
 
     def count(self) -> int:
