@@ -4,7 +4,7 @@
 
 The **Enterprise Attack Detection & Response Lab** provides a reproducible, isolated miniature enterprise environment for simulating realistic cyber attacks, engineering telemetry pipelines, developing behavioral detection rules, and executing automated incident response workflows.
 
-Phase 1 establishes the foundational infrastructure, network segmentation, identity services, compute targets, intentionally vulnerable applications, and centralized security monitoring stack.
+This architecture establishes the foundational infrastructure, network segmentation, identity services, compute targets, intentionally vulnerable applications, and centralized security monitoring stack.
 
 ---
 
