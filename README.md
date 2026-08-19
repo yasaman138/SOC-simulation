@@ -104,8 +104,7 @@ python3 cli.py teardown
 
 ```
 SOC/
-├── .env.example                  # Environment configuration template
-├── .gitignore                    # Strict repository hygiene rules
+├── LICENSE                       # MIT License
 ├── cli.py                        # Unified lab CLI
 ├── docker-compose.yml            # Multi-network Docker Compose infrastructure
 ├── docker/                       # Container Dockerfiles and configs
@@ -117,6 +116,7 @@ SOC/
 ├── docs/                         # Architecture and technical documentation
 │   ├── ad_structure.md
 │   ├── architecture.md
+│   ├── detection_engineering.md
 │   ├── logging_architecture.md
 │   ├── network_diagram.md
 │   └── vulnerabilities.md
@@ -129,8 +129,9 @@ SOC/
 │   └── validate_isolation.py
 ├── src/                          # Core source code
 │   ├── core/                     # Configuration, topology, logging
+│   ├── detection/                # MITRE detection rules, engine, alert store
 │   ├── infra/                    # Active Directory and Linux server modules
-│   ├── siem/                     # SIEM collector, ECS models, event store
+│   ├── siem/                     # SIEM collector, ECS models, event store, parsers
 │   └── vulnapp/                  # Vulnerable enterprise portal & API
 ├── terraform/                    # Infrastructure as Code modules
 │   ├── main.tf
@@ -150,4 +151,10 @@ SOC/
 This lab is created solely for defensive security research and education.
 - All intentionally vulnerable components reside strictly inside the isolated application tier.
 - No real secrets, cloud API keys, or production credentials are used.
-- Adheres strictly to the project engineering rules defined in `.antigravity/rules.md`.
+- Adheres strictly to project engineering standards, security isolation guidelines, and architectural policies.
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](file:///home/yasaman/SOC/LICENSE) file for details.
