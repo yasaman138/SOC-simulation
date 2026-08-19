@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository represents a defensive security research lab. Specific application and infrastructure vulnerabilities are intentionally introduced to serve as realistic attack simulation targets for telemetry generation, detection engineering, and incident response testing in subsequent phases.
+This repository represents a defensive security research lab. Specific application and infrastructure vulnerabilities are intentionally introduced to serve as realistic attack simulation targets for telemetry generation, detection engineering, and incident response testing.
 
 All intentionally vulnerable components are strictly isolated within the Application Tier (`172.28.30.0/24`) and configured so they cannot compromise the host system or external networks.
 
