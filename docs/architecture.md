@@ -61,9 +61,11 @@ The lab is divided into four distinct network security zones, each with dedicate
 
 ### 2.4 Security & Monitoring Management Network (`172.28.90.0/24`)
 - **Trust Level**: `SECURITY_MANAGEMENT` (100)
-- **Role**: Dedicated out-of-band management subnet for telemetry collection, SIEM aggregation, and security analytics.
+- **Role**: Dedicated out-of-band management subnet for telemetry collection, SIEM aggregation, detection engineering, and security alert management.
 - **Components**:
   - `siem.secmon.local` (`172.28.90.10`): Centralized SIEM aggregator receiving Syslog (5514/UDP) and JSON HTTP events (8088/TCP).
+  - **Detection Engine**: Behavioral correlation engine running 21+ MITRE ATT&CK mapped detection rules.
+  - **Alert Store**: Thread-safe incident database storing alerts, forensic context, and analyst triage records.
 
 ---
 
@@ -72,3 +74,11 @@ The lab is divided into four distinct network security zones, each with dedicate
 1. **External Isolation**: The External Simulation network cannot directly route traffic to Corporate Internal (`172.28.20.0/24`) or Security Management (`172.28.90.0/24`).
 2. **Application Isolation**: The Application Tier cannot access SSH (2222) or administrative interfaces on the Corporate Internal network.
 3. **Security Ingestion**: All tiers can forward telemetry to the SIEM on designated ports (8088/TCP, 5514/UDP). The SIEM cannot be manipulated from external networks.
+
+---
+
+## 4. Analytics & Detection References
+
+For complete technical specifications on normalized telemetry schemas, behavioral rules, MITRE ATT&CK technique matrix, and synthetic test fixtures, see:
+- [Detection Engineering & Analytics Reference](file:///home/yasaman/SOC/docs/detection_engineering.md)
+- [Centralized Logging Architecture](file:///home/yasaman/SOC/docs/logging_architecture.md)
