@@ -140,7 +140,7 @@ def search_employees(
     - Target: Internal database tier (app-db)
     - Vulnerability: Unsanitized string concatenation in SQL query.
     - Detection Signal: SQL syntax keywords, comment characters (--), UNION constructs.
-    - Purpose: Generate telemetry for SQL injection detection rules in Phase 2.
+    - Purpose: Generate telemetry for SQL injection detection rules.
     """
     client_ip = request.client.host if request and request.client else "127.0.0.1"
     vulnerabilities_enabled = getattr(
