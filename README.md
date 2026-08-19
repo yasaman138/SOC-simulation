@@ -53,6 +53,8 @@ graph TD
 - **Linux Infrastructure**: Enterprise Linux server (`linux-srv01.corp.enterprise.local`) with SSH daemon, OpenSSH authentication tracking, and Linux auditd command execution telemetry.
 - **Intentionally Vulnerable Application Tier**: Enterprise Web Portal & API with 5 documented lab vulnerabilities (SQL Injection, Command Injection, BOLA/IDOR, LDAP Injection, SSRF) emitting structured telemetry.
 - **Security Monitoring & SIEM Aggregator**: High-performance SIEM ingestion engine supporting Elastic Common Schema (ECS), HTTP event ingestion (Port 8088), and Syslog UDP (Port 5514).
+- **Detection Engineering Pipeline**: 30 high-fidelity Sigma-aligned detection rules spanning all 10 MITRE ATT&CK tactics with real-time alerting and AlertStore querying.
+- **Attack Simulation & Detection Validation Framework**: Automated, deterministic attack scenarios mapped to MITRE ATT&CK tactics, safety containment guardrails, benign negative controls, and automated coverage matrix generation.
 - **Infrastructure as Code (IaC)**: Declarative `docker-compose.yml` and modular Terraform configurations (`terraform/`).
 - **Tooling & Automation**: Unified CLI (`cli.py`), automated health checks (`scripts/healthcheck.py`), isolation validation (`scripts/validate_isolation.py`), bootstrap (`scripts/bootstrap.sh`), and teardown (`scripts/teardown.sh`).
 
@@ -74,17 +76,49 @@ Or directly:
 python3 cli.py status
 ```
 
-### 3. Run Automated Health Checks
+### 3. Run Automated Attack Simulations
 ```bash
-python3 cli.py health
+# Run all attack scenarios and benign controls
+python3 cli.py simulate
+
+# Run a specific scenario
+python3 cli.py simulate --scenario SCN-CRED-001
+
+# Run only offensive attack scenarios
+python3 cli.py simulate --attack
+
+# Run only benign false-positive validation controls
+python3 cli.py simulate --benign
 ```
 
-### 4. Validate Network Isolation and Security Boundaries
+### 4. Generate Detection Coverage Report
 ```bash
+# Output ASCII Coverage Matrix
+python3 cli.py coverage
+
+# Output JSON Coverage Report
+python3 cli.py coverage --json
+```
+
+### 5. Inspect Detection Rules and Alerts
+```bash
+# List all 30 detection rules
+python3 cli.py detections
+
+# Query generated alerts
+python3 cli.py alerts
+```
+
+### 6. Run Automated Health Checks & Validation
+```bash
+# Run health checks
+python3 cli.py health
+
+# Validate network isolation and security boundaries
 python3 cli.py validate
 ```
 
-### 5. Run the Complete Test Suite
+### 7. Run the Complete Test Suite
 ```bash
 python3 cli.py test
 ```
@@ -93,7 +127,7 @@ Or:
 python3 -m pytest -v
 ```
 
-### 6. Clean Teardown
+### 8. Clean Teardown
 ```bash
 python3 cli.py teardown
 ```
@@ -116,6 +150,7 @@ SOC/
 ├── docs/                         # Architecture and technical documentation
 │   ├── ad_structure.md
 │   ├── architecture.md
+│   ├── attack_simulation.md
 │   ├── detection_engineering.md
 │   ├── logging_architecture.md
 │   ├── network_diagram.md
@@ -132,6 +167,7 @@ SOC/
 │   ├── detection/                # MITRE detection rules, engine, alert store
 │   ├── infra/                    # Active Directory and Linux server modules
 │   ├── siem/                     # SIEM collector, ECS models, event store, parsers
+│   ├── simulation/               # Attack simulation framework, scenarios, runner
 │   └── vulnapp/                  # Vulnerable enterprise portal & API
 ├── terraform/                    # Infrastructure as Code modules
 │   ├── main.tf
