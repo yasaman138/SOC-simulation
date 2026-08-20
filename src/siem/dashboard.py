@@ -748,6 +748,16 @@ def render_dashboard_html() -> str:
 </main>
 
 <script>
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   let activeStep = 1;
   let currentSampleIncident = {
     incident_id: "INC-DEMO-001",
@@ -835,11 +845,11 @@ def render_dashboard_html() -> str:
             <div class="timeline-node ${t.is_key_event ? 'key-event' : ''}">
               <div class="timeline-box">
                 <div class="timeline-header">
-                  <span>${t.timestamp}</span>
-                  <code>${t.category}</code>
+                  <span>${escapeHtml(t.timestamp)}</span>
+                  <code>${escapeHtml(t.category)}</code>
                 </div>
-                <div class="timeline-title">${t.is_key_event ? '⚡ ' : ''}${t.title}</div>
-                <div style="font-size:0.85rem; color:var(--text-muted);">${t.description}</div>
+                <div class="timeline-title">${t.is_key_event ? '⚡ ' : ''}${escapeHtml(t.title)}</div>
+                <div style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(t.description)}</div>
               </div>
             </div>
           `).join('')}
@@ -855,11 +865,11 @@ def render_dashboard_html() -> str:
           <tbody>
             ${currentSampleIncident.indicators.map(i => `
               <tr>
-                <td><code>${i.type}</code></td>
-                <td><code>${i.value}</code></td>
-                <td><span class="badge ${i.reputation === 'MALICIOUS' ? 'badge-critical' : 'badge-high'}">${i.reputation}</span></td>
-                <td>${i.confidence}</td>
-                <td>${i.context}</td>
+                <td><code>${escapeHtml(i.type)}</code></td>
+                <td><code>${escapeHtml(i.value)}</code></td>
+                <td><span class="badge ${i.reputation === 'MALICIOUS' ? 'badge-critical' : 'badge-high'}">${escapeHtml(i.reputation)}</span></td>
+                <td>${Number(i.confidence).toFixed(2)}</td>
+                <td>${escapeHtml(i.context)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -916,7 +926,7 @@ def render_dashboard_html() -> str:
   function executeDemoAction(actionType, target) {
     const feedback = document.getElementById('action-feedback');
     if (!feedback) return;
-    feedback.innerHTML = `<div style="background:var(--green-glow); border:1px solid var(--green); color:var(--green); padding:10px; border-radius:6px; font-size:0.85rem;">[SUCCESS] Action <strong>${actionType}</strong> applied to <strong>${target}</strong>. Audit entry recorded with rollback capability.</div>`;
+    feedback.innerHTML = `<div style="background:var(--green-glow); border:1px solid var(--green); color:var(--green); padding:10px; border-radius:6px; font-size:0.85rem;">[SUCCESS] Action <strong>${escapeHtml(actionType)}</strong> applied to <strong>${escapeHtml(target)}</strong>. Audit entry recorded with rollback capability.</div>`;
     fetchAndRenderAllData();
   }
 
@@ -929,7 +939,7 @@ def render_dashboard_html() -> str:
     fetch('/api/v1/health/deep')
       .then(r => r.json())
       .then(data => {
-        alert("Deep Diagnostic Completed: Status is " + data.overall_status.toUpperCase() + " (" + data.healthy_components + "/" + data.total_components + " components healthy).");
+        alert("Deep Diagnostic Completed: Status is " + String(data.overall_status).toUpperCase() + " (" + data.healthy_components + "/" + data.total_components + " components healthy).");
         fetchAndRenderAllData();
       });
   }
@@ -966,7 +976,7 @@ def render_dashboard_html() -> str:
             return `
               <div class="tactic-card">
                 <div class="tactic-count">${count}</div>
-                <div class="tactic-name">${t}</div>
+                <div class="tactic-name">${escapeHtml(t)}</div>
               </div>
             `;
           }).join('');
@@ -985,9 +995,9 @@ def render_dashboard_html() -> str:
             const sevBadge = a.severity === 'high' || a.severity === 'critical' ? 'badge-critical' : 'badge-medium';
             return `
               <tr>
-                <td><span class="badge ${sevBadge}">${a.severity.toUpperCase()}</span></td>
-                <td><code>${a.rule_id}</code></td>
-                <td><strong>${a.title}</strong></td>
+                <td><span class="badge ${sevBadge}">${escapeHtml(a.severity.toUpperCase())}</span></td>
+                <td><code>${escapeHtml(a.rule_id)}</code></td>
+                <td><strong>${escapeHtml(a.title)}</strong></td>
                 <td><button class="btn btn-secondary btn-sm" onclick="switchTab('investigate')">Investigate</button></td>
               </tr>
             `;
@@ -999,12 +1009,12 @@ def render_dashboard_html() -> str:
             const hostUser = (a.affected_entities.host || '') + (a.affected_entities.user ? ` (${a.affected_entities.user})` : '');
             return `
               <tr>
-                <td><code>${a.id}</code></td>
-                <td><span class="badge ${sevBadge}">${a.severity.toUpperCase()}</span></td>
-                <td><code>${a.rule_id}</code></td>
-                <td><strong>${a.title}</strong></td>
-                <td>${hostUser || 'N/A'}</td>
-                <td>${a.timestamp}</td>
+                <td><code>${escapeHtml(a.id)}</code></td>
+                <td><span class="badge ${sevBadge}">${escapeHtml(a.severity.toUpperCase())}</span></td>
+                <td><code>${escapeHtml(a.rule_id)}</code></td>
+                <td><strong>${escapeHtml(a.title)}</strong></td>
+                <td>${escapeHtml(hostUser) || 'N/A'}</td>
+                <td>${escapeHtml(a.timestamp)}</td>
                 <td><button class="btn btn-primary btn-sm" onclick="switchTab('investigate')">🚀 Investigate</button></td>
               </tr>
             `;
@@ -1022,11 +1032,11 @@ def render_dashboard_html() -> str:
         if (table && data.rules) {
           table.innerHTML = data.rules.map(r => `
             <tr>
-              <td><code>${r.id}</code></td>
-              <td><span class="badge badge-medium">${r.severity.toUpperCase()}</span></td>
-              <td><code>${r.mitre_attack.tactic}</code></td>
-              <td><code>${r.mitre_attack.technique_id}</code></td>
-              <td>${r.name}</td>
+              <td><code>${escapeHtml(r.id)}</code></td>
+              <td><span class="badge badge-medium">${escapeHtml(r.severity.toUpperCase())}</span></td>
+              <td><code>${escapeHtml(r.mitre_attack.tactic)}</code></td>
+              <td><code>${escapeHtml(r.mitre_attack.technique_id)}</code></td>
+              <td>${escapeHtml(r.name)}</td>
               <td><span class="badge badge-success">YES</span></td>
               <td><span class="badge badge-success">ACTIVE</span></td>
             </tr>
@@ -1043,11 +1053,11 @@ def render_dashboard_html() -> str:
         if (grid && data.components) {
           grid.innerHTML = data.components.map(c => `
             <div class="stat-card ${c.status === 'healthy' ? 'accent-green' : 'accent-red'}">
-              <div class="stat-label">${c.name}</div>
+              <div class="stat-label">${escapeHtml(c.name)}</div>
               <div class="stat-value" style="font-size:1.2rem; color:${c.status === 'healthy' ? 'var(--green)' : 'var(--red)'};">
-                ${c.status.toUpperCase()}
+                ${escapeHtml(c.status.toUpperCase())}
               </div>
-              <div class="stat-sub">Latency: ${c.latency_ms}ms</div>
+              <div class="stat-sub">Latency: ${Number(c.latency_ms).toFixed(1)}ms</div>
             </div>
           `).join('');
         }
