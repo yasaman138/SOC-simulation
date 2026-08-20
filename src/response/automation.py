@@ -326,20 +326,44 @@ class ResponseAutomationEngine:
         incident_id: Optional[str] = None,
     ) -> AuditLogEntry:
         """Safely terminate a malicious or unauthorized process on a lab endpoint."""
-        target = f"{hostname}:{pid if pid else process_name}"
+        clean_host = hostname.strip()
+        target = f"{clean_host}:{pid if pid is not None else process_name}"
 
-        # Guardrails: Cannot terminate init system (PID 1) or vital systemd
-        if pid == 1 or (process_name and process_name.lower() in ("systemd", "init", "launchd")):
+        # Lab Boundary Guardrail
+        try:
+            LabSafetyGuardrail.assert_safe_target(clean_host)
+        except Exception as e:
             return self._record_audit(
                 action=ResponseActionType.TERMINATE_PROCESS,
                 actor=actor,
                 target=target,
                 reason=reason,
                 result=ResponseActionResult.BLOCKED_BY_POLICY,
-                details={"error": "Cannot terminate system initialization daemon (PID 1 / systemd)."},
+                details={"error": f"Target outside allowed lab boundary: {e}"},
             )
 
-        if pid:
+        # Guardrails: Cannot terminate init system (PID <= 2) or vital daemons
+        if pid is not None and (pid <= 2):
+            return self._record_audit(
+                action=ResponseActionType.TERMINATE_PROCESS,
+                actor=actor,
+                target=target,
+                reason=reason,
+                result=ResponseActionResult.BLOCKED_BY_POLICY,
+                details={"error": f"Cannot terminate protected system PID {pid}."},
+            )
+
+        if process_name and process_name.lower() in ("systemd", "init", "launchd", "kthreadd"):
+            return self._record_audit(
+                action=ResponseActionType.TERMINATE_PROCESS,
+                actor=actor,
+                target=target,
+                reason=reason,
+                result=ResponseActionResult.BLOCKED_BY_POLICY,
+                details={"error": f"Cannot terminate system initialization daemon '{process_name}'."},
+            )
+
+        if pid is not None:
             self._terminated_pids.add(pid)
 
         return self._record_audit(
@@ -350,7 +374,7 @@ class ResponseAutomationEngine:
             result=ResponseActionResult.SUCCESS,
             details={
                 "incident_id": incident_id,
-                "hostname": hostname,
+                "hostname": clean_host,
                 "pid": pid,
                 "process_name": process_name,
                 "signal": "SIGKILL (9)",
@@ -366,8 +390,23 @@ class ResponseAutomationEngine:
         incident_id: Optional[str] = None,
     ) -> AuditLogEntry:
         """Gather digital forensic snapshot and system integrity metadata."""
+        clean_host = hostname.strip()
+
+        # Lab Boundary Guardrail
+        try:
+            LabSafetyGuardrail.assert_safe_target(clean_host)
+        except Exception as e:
+            return self._record_audit(
+                action=ResponseActionType.COLLECT_FORENSICS,
+                actor=actor,
+                target=clean_host,
+                reason=reason,
+                result=ResponseActionResult.BLOCKED_BY_POLICY,
+                details={"error": f"Target outside allowed lab boundary: {e}"},
+            )
+
         forensic_bundle = {
-            "hostname": hostname,
+            "hostname": clean_host,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "collected_artifacts": [
                 "/var/log/audit/audit.log",
@@ -387,7 +426,7 @@ class ResponseAutomationEngine:
         return self._record_audit(
             action=ResponseActionType.COLLECT_FORENSICS,
             actor=actor,
-            target=hostname,
+            target=clean_host,
             reason=reason,
             result=ResponseActionResult.SUCCESS,
             details={
@@ -406,6 +445,16 @@ class ResponseAutomationEngine:
     ) -> AuditLogEntry:
         """Revoke active tokens, Kerberos tickets, and sessions for a compromised account."""
         clean_user = username.strip()
+
+        if not clean_user:
+            return self._record_audit(
+                action=ResponseActionType.REVOKE_SESSIONS,
+                actor=actor,
+                target=username,
+                reason=reason,
+                result=ResponseActionResult.BLOCKED_BY_POLICY,
+                details={"error": "Username cannot be empty."},
+            )
 
         return self._record_audit(
             action=ResponseActionType.REVOKE_SESSIONS,
@@ -430,7 +479,33 @@ class ResponseAutomationEngine:
         incident_id: Optional[str] = None,
     ) -> AuditLogEntry:
         """Restore an altered, shredded, or encrypted file from verified backup."""
-        target = f"{hostname}:{file_path}"
+        clean_host = hostname.strip()
+        clean_path = file_path.strip()
+        target = f"{clean_host}:{clean_path}"
+
+        # Lab Boundary Guardrail
+        try:
+            LabSafetyGuardrail.assert_safe_target(clean_host)
+        except Exception as e:
+            return self._record_audit(
+                action=ResponseActionType.RESTORE_BACKUP,
+                actor=actor,
+                target=target,
+                reason=reason,
+                result=ResponseActionResult.BLOCKED_BY_POLICY,
+                details={"error": f"Target outside allowed lab boundary: {e}"},
+            )
+
+        # Directory Traversal & Critical Path Guardrail
+        if ".." in clean_path or clean_path.startswith("/etc/shadow") or clean_path.startswith("/etc/sudoers"):
+            return self._record_audit(
+                action=ResponseActionType.RESTORE_BACKUP,
+                actor=actor,
+                target=target,
+                reason=reason,
+                result=ResponseActionResult.BLOCKED_BY_POLICY,
+                details={"error": f"Restoration path '{clean_path}' blocked by security policy (directory traversal or protected system path)."},
+            )
 
         return self._record_audit(
             action=ResponseActionType.RESTORE_BACKUP,
@@ -440,7 +515,7 @@ class ResponseAutomationEngine:
             result=ResponseActionResult.SUCCESS,
             details={
                 "incident_id": incident_id,
-                "file_path": file_path,
+                "file_path": clean_path,
                 "restored_from": "backup_repo_baseline",
                 "status": "FILE_RESTORED",
             },
