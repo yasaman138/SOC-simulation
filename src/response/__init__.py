@@ -29,6 +29,7 @@ from src.response.playbooks import (
     MalwareRansomwarePlaybook,
     generate_incident_report_markdown,
 )
+from src.response.reporting import IncidentReportGenerator
 from src.response.storage import AuditStore, IncidentStore
 
 __all__ = [
@@ -59,4 +60,5 @@ __all__ = [
     "LateralMovementPlaybook",
     "MalwareRansomwarePlaybook",
     "generate_incident_report_markdown",
+    "IncidentReportGenerator",
 ]
