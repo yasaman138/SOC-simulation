@@ -2,11 +2,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+RUN groupadd -g 10001 appuser && useradd -u 10001 -g appuser -s /sbin/nologin -d /app appuser
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
+RUN chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 389 636 88
 
 CMD ["python3", "-c", "from src.infra.ad_directory.server import ActiveDirectoryServer; import time; srv = ActiveDirectoryServer(); print('Active Directory Domain Controller running on dc01.corp.enterprise.local'); time.sleep(86400 * 365)"]
+
