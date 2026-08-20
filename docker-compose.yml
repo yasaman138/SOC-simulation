@@ -47,6 +47,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.siem
     hostname: siem.secmon.local
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     environment:
@@ -76,6 +78,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.ad
     hostname: dc01.corp.enterprise.local
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     environment:
@@ -121,6 +125,8 @@ services:
     container_name: lab-app-db
     image: postgres:15-alpine
     hostname: db01.app.local
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     environment:
@@ -138,6 +144,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.app
     hostname: portal.app.local
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     environment:
@@ -170,6 +178,8 @@ services:
     container_name: lab-edge-proxy
     image: nginx:alpine
     hostname: edge-proxy.lab.local
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     ports:
