@@ -122,12 +122,16 @@ class LabSettings(BaseSettings):
         return True
 
     def get_sanitized_config(self) -> Dict[str, Any]:
-        """Export configuration with sensitive keys redacted for diagnostic output."""
+        """Export configuration with sensitive keys and connection passwords redacted for diagnostic output."""
         cfg = self.model_dump()
         if "app_secret_key" in cfg:
             cfg["app_secret_key"] = "***REDACTED***"
+        if "app_db_url" in cfg and "@" in str(cfg["app_db_url"]):
+            import re
+            cfg["app_db_url"] = re.sub(r":([^:@]+)@", r":***REDACTED***@", str(cfg["app_db_url"]))
         return cfg
 
 
 # Global settings singleton instance
 settings = LabSettings()
+
