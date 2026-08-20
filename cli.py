@@ -217,6 +217,210 @@ def cmd_coverage(args):
         print(runner.format_coverage_table(report))
 
 
+def cmd_incidents(args):
+    """View and filter security incidents in the SOC store."""
+    from src.response.models import IncidentQuery
+    from src.response.playbooks import generate_incident_report_markdown
+    from src.response.storage import IncidentStore
+
+    # Standalone incident demonstration if none in runtime store
+    inc_store = IncidentStore()
+    if args.id:
+        inc = inc_store.get_incident(args.id)
+        if not inc:
+            print(f"Incident '{args.id}' not found in active store.")
+            sys.exit(1)
+        print(generate_incident_report_markdown(inc))
+    else:
+        incidents = inc_store.list_incidents()
+        print("=" * 80)
+        print("Enterprise SOC Incident Response - Active Incidents")
+        print("=" * 80)
+        if not incidents:
+            print("No active incidents. Use 'simulate' or 'investigate' to generate incidents.")
+        else:
+            print(f"{'ID':<15} {'Severity':<10} {'Status':<15} {'Title'}")
+            print("-" * 80)
+            for inc in incidents:
+                print(f"{inc.incident_id:<15} {inc.severity.value.upper():<10} {inc.status.value.upper():<15} {inc.title}")
+        print("=" * 80)
+
+
+def cmd_investigate(args):
+    """Execute automated multi-source investigation and correlation on simulated attack or alert."""
+    from fastapi.testclient import TestClient
+    from src.detection.engine import DetectionEngine
+    from src.detection.storage import AlertStore
+    from src.infra.ad_directory.server import ActiveDirectoryServer
+    from src.infra.linux_server.service import LinuxServerService
+    from src.response.investigation import InvestigationEngine
+    from src.response.playbooks import generate_incident_report_markdown
+    from src.response.storage import IncidentStore
+    from src.siem.collector import SIEMCollector
+    from src.siem.storage import EventStore
+    from src.simulation.models import SimulationContext
+    from src.simulation.registry import ScenarioRegistry
+    from src.vulnapp.app import create_app
+    from src.vulnapp.telemetry import AppTelemetryClient
+
+    event_store = EventStore(max_capacity=5000)
+    alert_store = AlertStore(max_capacity=5000)
+    detection_engine = DetectionEngine(alert_store=alert_store)
+    siem_collector = SIEMCollector(store=event_store, detection_engine=detection_engine)
+    ad = ActiveDirectoryServer(siem_collector=siem_collector)
+    linux = LinuxServerService(siem_collector=siem_collector)
+    telemetry = AppTelemetryClient(local_collector=siem_collector)
+    vuln_app = create_app(database_url="sqlite:///:memory:", telemetry_client=telemetry, enable_vulnerabilities=True)
+    vuln_client = TestClient(vuln_app)
+
+    sim_context = SimulationContext(
+        siem_collector=siem_collector,
+        event_store=event_store,
+        alert_store=alert_store,
+        detection_engine=detection_engine,
+        ad_server=ad,
+        linux_service=linux,
+        vuln_client=vuln_client,
+        dry_run=False,
+    )
+
+    registry = ScenarioRegistry()
+    scn_id = args.scenario or "SCN-CRED-004"
+    scenario = registry.get_scenario(scn_id)
+    if not scenario:
+        print(f"Error: Scenario '{scn_id}' not found.")
+        sys.exit(1)
+
+    print(f"1. Simulating attack scenario: [{scenario.id}] {scenario.name}...")
+    scenario.execute(sim_context)
+
+    alerts = alert_store.query_alerts()
+    if not alerts:
+        print("No alerts generated to investigate.")
+        sys.exit(0)
+
+    print(f"2. Detection triggered {len(alerts)} security alerts. Launching Automated Investigation Engine...")
+    inv_engine = InvestigationEngine(event_store=event_store, alert_store=alert_store)
+    incident = inv_engine.create_incident_from_alert(alerts[0])
+
+    print(f"\n3. Automated Investigation Complete for Incident [{incident.incident_id}]:")
+    print(f"   • Affected Assets:   {', '.join(incident.affected_assets)}")
+    print(f"   • Affected Users:    {', '.join(incident.affected_users)}")
+    print(f"   • Timeline Events:   {len(incident.timeline)}")
+    print(f"   • Indicators (IOCs): {len(incident.indicators)}")
+    print(f"   • Initial Vector:    {incident.root_cause_analysis.initial_vector if incident.root_cause_analysis else 'N/A'}")
+    print("\n" + generate_incident_report_markdown(incident))
+
+
+def cmd_respond(args):
+    """Execute end-to-end incident investigation and response playbook workflow."""
+    from fastapi.testclient import TestClient
+    from src.detection.engine import DetectionEngine
+    from src.detection.storage import AlertStore
+    from src.infra.ad_directory.server import ActiveDirectoryServer
+    from src.infra.linux_server.service import LinuxServerService
+    from src.response.automation import ResponseAutomationEngine
+    from src.response.investigation import InvestigationEngine
+    from src.response.playbooks import (
+        CredentialCompromisePlaybook,
+        LateralMovementPlaybook,
+        MalwareRansomwarePlaybook,
+        generate_incident_report_markdown,
+    )
+    from src.response.storage import AuditStore, IncidentStore
+    from src.siem.collector import SIEMCollector
+    from src.siem.storage import EventStore
+    from src.simulation.models import SimulationContext
+    from src.simulation.registry import ScenarioRegistry
+    from src.vulnapp.app import create_app
+    from src.vulnapp.telemetry import AppTelemetryClient
+
+    event_store = EventStore(max_capacity=5000)
+    alert_store = AlertStore(max_capacity=5000)
+    audit_store = AuditStore(max_capacity=5000)
+    detection_engine = DetectionEngine(alert_store=alert_store)
+    siem_collector = SIEMCollector(store=event_store, detection_engine=detection_engine)
+    ad = ActiveDirectoryServer(siem_collector=siem_collector)
+    linux = LinuxServerService(siem_collector=siem_collector)
+    telemetry = AppTelemetryClient(local_collector=siem_collector)
+    vuln_app = create_app(database_url="sqlite:///:memory:", telemetry_client=telemetry, enable_vulnerabilities=True)
+    vuln_client = TestClient(vuln_app)
+
+    sim_context = SimulationContext(
+        siem_collector=siem_collector,
+        event_store=event_store,
+        alert_store=alert_store,
+        detection_engine=detection_engine,
+        ad_server=ad,
+        linux_service=linux,
+        vuln_client=vuln_client,
+        dry_run=False,
+    )
+
+    inv_engine = InvestigationEngine(event_store=event_store, alert_store=alert_store)
+    auto_engine = ResponseAutomationEngine(
+        audit_store=audit_store,
+        siem_collector=siem_collector,
+        ad_server=ad,
+        linux_service=linux,
+    )
+
+    playbook_map = {
+        "credential": (CredentialCompromisePlaybook(), "SCN-CRED-004"),
+        "lateral": (LateralMovementPlaybook(), "SCN-LAT-001"),
+        "malware": (MalwareRansomwarePlaybook(), "SCN-IMP-002"),
+    }
+
+    p_type = args.playbook or "credential"
+    if p_type not in playbook_map:
+        print(f"Unknown playbook '{p_type}'. Options: credential, lateral, malware")
+        sys.exit(1)
+
+    playbook, default_scn = playbook_map[p_type]
+    registry = ScenarioRegistry()
+    scenario = registry.get_scenario(default_scn)
+
+    print("=" * 80)
+    print(f"Executing Incident Response Playbook: {playbook.name}")
+    print("=" * 80)
+    print(f"Stage 1: Simulating Attack Scenario [{scenario.id}] {scenario.name}...")
+    scenario.execute(sim_context)
+
+    alerts = alert_store.query_alerts()
+    print(f"Stage 2: Detections triggered {len(alerts)} alerts. Initializing Incident...")
+    incident = inv_engine.create_incident_from_alert(alerts[0])
+
+    print("Stage 3: Executing Automated Containment, Remediation, and Recovery...")
+    resolved_incident = playbook.execute(
+        incident=incident,
+        investigation_engine=inv_engine,
+        automation_engine=auto_engine,
+    )
+
+    print("\nStage 4: Incident Response Final Report:")
+    print(generate_incident_report_markdown(resolved_incident))
+
+
+def cmd_audit(args):
+    """View response action audit trail."""
+    from src.response.storage import AuditStore
+
+    # Demonstrative audit entries
+    audit_store = AuditStore()
+    entries = audit_store.list_entries(limit=args.limit)
+    print("=" * 80)
+    print("Enterprise SOC - Response Actions Audit Trail")
+    print("=" * 80)
+    if not entries:
+        print("No actions in audit log. Execute a response playbook with 'respond' command.")
+    else:
+        print(f"{'ID':<16} {'Action':<18} {'Actor':<15} {'Target':<20} {'Result'}")
+        print("-" * 80)
+        for e in entries:
+            print(f"{e.id:<16} {e.action.value:<18} {e.actor:<15} {e.target:<20} {e.result.value.upper()}")
+    print("=" * 80)
+
+
 def cmd_test(args):
     print("Running project test suite with pytest...")
     res = subprocess.run(["python3", "-m", "pytest", "-v"])
@@ -247,6 +451,18 @@ def main():
     cov_parser = subparsers.add_parser("coverage", help="Generate MITRE ATT&CK detection coverage report")
     cov_parser.add_argument("--json", action="store_true", help="Output coverage matrix in JSON format")
 
+    inc_parser = subparsers.add_parser("incidents", help="View security incidents")
+    inc_parser.add_argument("--id", help="View details and report for a specific incident ID")
+
+    inv_parser = subparsers.add_parser("investigate", help="Execute automated investigation on attack scenario or alert")
+    inv_parser.add_argument("--scenario", "-s", help="Scenario ID to simulate and investigate (default: SCN-CRED-004)")
+
+    resp_parser = subparsers.add_parser("respond", help="Execute automated incident response playbook")
+    resp_parser.add_argument("--playbook", "-p", choices=["credential", "lateral", "malware"], default="credential", help="Playbook type to execute")
+
+    aud_parser = subparsers.add_parser("audit", help="View response automation audit log")
+    aud_parser.add_argument("--limit", type=int, default=50, help="Maximum entries to display")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -263,6 +479,10 @@ def main():
         "alerts": cmd_alerts,
         "simulate": cmd_simulate,
         "coverage": cmd_coverage,
+        "incidents": cmd_incidents,
+        "investigate": cmd_investigate,
+        "respond": cmd_respond,
+        "audit": cmd_audit,
         "test": cmd_test,
     }
 
