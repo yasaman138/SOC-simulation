@@ -2,15 +2,17 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Security](https://img.shields.io/badge/Security-Isolated%20Lab-green.svg)](#)
-[![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)](#)
+[![MITRE ATT&CK](https://img.shields.io/badge/MITRE%20ATT%26CK-100%25%20Coverage-brightgreen.svg)](#)
+[![SOC Platform](https://img.shields.io/badge/SOC-Interactive%20Workbench-cyan.svg)](#)
+[![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
 
-A reproducible, isolated enterprise security research laboratory designed for attack simulation, telemetry collection, detection engineering, and incident response automation.
+A reproducible, production-grade enterprise security research platform designed for realistic cyber attack simulation, telemetry collection, Sigma-aligned detection engineering, automated incident response (SOAR), and live SOC monitoring.
 
 ---
 
-## Target Architecture
+## Architecture Overview
 
-The lab is partitioned into four isolated network zones with explicit trust boundaries:
+The lab is partitioned into four isolated network zones with strict trust boundaries:
 
 ```mermaid
 graph TD
@@ -32,6 +34,7 @@ graph TD
 
     subgraph SecMonZone ["Security & Monitoring Network (172.28.90.0/24)"]
         SIEM["SIEM & Central Telemetry Collector (172.28.90.10)"]
+        Dashboard["Interactive SOC Web Dashboard & SOAR (172.28.90.10:8088)"]
     end
 
     Attacker -->|HTTP / HTTPS| EdgeProxy
@@ -42,112 +45,110 @@ graph TD
     PortalApp ==>|HTTP JSON Events:8088| SIEM
     LinuxSrv ==>|Syslog UDP:5514| SIEM
     ADDC ==>|Security EventLog:8088| SIEM
+    SIEM --> Dashboard
 ```
 
 ---
 
-## Core Features & Capabilities
+## Core Capabilities
 
-- **Network Topology & Trust Boundaries**: 4 segmented subnets (`simulation_net`, `corp_internal_net`, `app_tier_net`, `secmon_net`) with automated policy validation.
-- **Active Directory Infrastructure**: `CORP.ENTERPRISE.LOCAL` domain hierarchy with multi-tiered OUs, privileged administrators (`da_johnson`, `ea_miller`), service identities with SPNs (`svc_sql`, `svc_backup`), and Windows Security EventLog simulation (Event IDs 4624, 4625, 4768, 4769).
-- **Linux Infrastructure**: Enterprise Linux server (`linux-srv01.corp.enterprise.local`) with SSH daemon, OpenSSH authentication tracking, and Linux auditd command execution telemetry.
-- **Intentionally Vulnerable Application Tier**: Enterprise Web Portal & API with 5 documented lab vulnerabilities (SQL Injection, Command Injection, BOLA/IDOR, LDAP Injection, SSRF) emitting structured telemetry.
-- **Security Monitoring & SIEM Aggregator**: High-performance SIEM ingestion engine supporting Elastic Common Schema (ECS), HTTP event ingestion (Port 8088), and Syslog UDP (Port 5514).
-- **Detection Engineering Pipeline**: 30 high-fidelity Sigma-aligned detection rules spanning all 10 MITRE ATT&CK tactics with real-time alerting and AlertStore querying.
-- **Attack Simulation & Detection Validation Framework**: Automated, deterministic attack scenarios mapped to MITRE ATT&CK tactics, safety containment guardrails, benign negative controls, and automated coverage matrix generation.
-- **Incident Response & Investigation Engine**: Multi-source telemetry correlation across authentication, process lineage, network flows, and file activity, generating chronological timelines, extracting indicators of compromise (IOCs), and conducting automated root-cause analysis.
-- **Safe Response Automation & Containment**: Auditable containment workflows including user disabling, endpoint network isolation, perimeter IOC blocking, process termination, volatile forensics collection, and rollback capabilities with strict safety guardrails.
-- **Full-Lifecycle Incident Playbooks**: Pre-packaged automated playbooks for Credential Compromise, Lateral Movement, and Malware/Ransomware Data Destruction scenarios with executive and technical Markdown report generation.
-- **Infrastructure as Code (IaC)**: Declarative `docker-compose.yml` and modular Terraform configurations (`terraform/`).
-- **Tooling & Automation**: Unified CLI (`cli.py`), automated health checks (`scripts/healthcheck.py`), isolation validation (`scripts/validate_isolation.py`), bootstrap (`scripts/bootstrap.sh`), and teardown (`scripts/teardown.sh`).
+- **Interactive SOC Web Dashboard**: High-aesthetic single-page console (`http://localhost:8088/dashboard`) with real-time telemetry metrics, MITRE ATT&CK heat grid, alert triage feed, incident workbench, and live subsystem diagnostics.
+- **Guided Investigation UX**: Structured 7-step analyst lifecycle:
+  $$\text{Alert} \longrightarrow \text{Incident} \longrightarrow \text{Timeline} \longrightarrow \text{Evidence} \longrightarrow \text{MITRE ATT\&CK} \longrightarrow \text{Response} \longrightarrow \text{Resolution}$$
+- **Live SOC Metrics Engine**: Derives real operational metrics (Mean Time to Detect, Mean Time to Respond, Detection Rate, False Positive Rate, MITRE Coverage Score, and Composite System Health).
+- **Multi-Format Incident Reporting**: Synthesizes 12-section incident response reports in Markdown, JSON, and self-contained styled HTML.
+- **Detection Engineering Pipeline**: 30 high-fidelity Sigma-aligned detection rules spanning all 10 MITRE ATT&CK tactics with real-time alerting.
+- **Attack Simulation & Detection Validation**: 24 deterministic attack scenarios and 6 benign negative controls ensuring 100% detection coverage and 0% false positives.
+- **Automated Incident Response (SOAR)**: Multi-source log correlation, automated root-cause analysis, account disablement, host network isolation, IP blocking, and reversible action rollback.
+- **Deep Health Diagnostics**: Live operational checks verifying all 7 infrastructure and security subsystems.
 
 ---
 
 ## Quickstart Guide
 
-### 1. Bootstrap the Laboratory
+### 1. Start the SIEM Collector & Web Dashboard
 ```bash
-python3 cli.py bootstrap
+python3 cli.py serve --port 8088
 ```
-Or directly:
+Open your browser to: **`http://localhost:8088/dashboard`**
+
+### 2. View Terminal SOC Dashboard & Metrics
 ```bash
-./scripts/bootstrap.sh
+# Terminal SOC dashboard
+python3 cli.py dashboard
+
+# Operational security metrics
+python3 cli.py metrics
 ```
 
-### 2. Check Lab Status and Topology
+### 3. Run Attack Simulations & MITRE ATT&CK Coverage
 ```bash
-python3 cli.py status
-```
-
-### 3. Run Automated Attack Simulations
-```bash
-# Run all attack scenarios and benign controls
+# Run all simulation scenarios
 python3 cli.py simulate
 
-# Run a specific scenario
-python3 cli.py simulate --scenario SCN-CRED-001
+# Simulate a specific scenario (e.g. LSASS Memory Dump)
+python3 cli.py simulate --scenario SCN-CRED-004
 
-# Run only offensive attack scenarios
-python3 cli.py simulate --attack
-
-# Run only benign false-positive validation controls
-python3 cli.py simulate --benign
-```
-
-### 4. Generate Detection Coverage Report
-```bash
-# Output ASCII Coverage Matrix
+# Generate full MITRE ATT&CK coverage report
 python3 cli.py coverage
-
-# Output JSON Coverage Report
-python3 cli.py coverage --json
 ```
 
-### 5. Inspect Detection Rules and Alerts
+### 4. Execute Automated Investigation & Incident Response Playbooks
 ```bash
-# List all 30 detection rules
-python3 cli.py detections
-
-# Query generated alerts
-python3 cli.py alerts
-```
-
-### 6. Automated Investigation & Incident Response
-```bash
-# Run automated investigation on an attack scenario
+# Investigate attack scenario
 python3 cli.py investigate --scenario SCN-CRED-004
 
-# Execute full incident response playbooks
+# Execute incident response playbooks
 python3 cli.py respond --playbook credential
 python3 cli.py respond --playbook lateral
 python3 cli.py respond --playbook malware
 
-# View response action audit trail
-python3 cli.py audit --limit 50
+# Review immutable SOAR audit trail
+python3 cli.py audit
 ```
 
-### 7. Run Automated Health Checks & Validation
+### 5. Generate Multi-Format Incident Reports
 ```bash
-# Run health checks
+# Terminal Markdown report
+python3 cli.py report --format md
+
+# Export printable HTML report
+python3 cli.py report --format html --output incident_report.html
+
+# Export structured JSON report
+python3 cli.py report --format json --output incident_report.json
+```
+
+### 6. Run System Health Checks & Automated Test Suite
+```bash
+# Execute deep diagnostics across all 7 subsystems
 python3 cli.py health
 
-# Validate network isolation and security boundaries
+# Validate network segmentation and firewall isolation
 python3 cli.py validate
-```
 
-### 8. Run the Complete Test Suite
-```bash
-python3 cli.py test
-```
-Or:
-```bash
+# Run the complete test suite
 python3 -m pytest -v
 ```
 
-### 9. Clean Teardown
-```bash
-python3 cli.py teardown
-```
+---
+
+## Complete Documentation Suite
+
+Detailed technical documentation is available in the [`docs/`](docs/) directory:
+
+- [Demonstration & Portfolio Guide](docs/demonstration_guide.md): Step-by-step reproduction walkthrough.
+- [Target Architecture](docs/architecture.md): Subnet zoning, trust boundaries, and telemetry topology.
+- [Threat Model](docs/threat_model.md): STRIDE threat modeling and asset classification.
+- [MITRE ATT&CK Coverage Matrix](docs/mitre_coverage.md): Complete mapping of 30 detection rules across 10 tactics.
+- [Detection Engineering Reference](docs/detection_engineering.md): Rule definitions and Sigma mapping.
+- [Incident Response Guide](docs/incident_response_guide.md): Investigation correlation engine and SOAR playbooks.
+- [Centralized Logging Architecture](docs/logging_architecture.md): ECS normalization schemas.
+- [Testing & Quality Assurance Guide](docs/testing_guide.md): Test execution and validation scripts.
+- [Troubleshooting & Operations](docs/troubleshooting.md): Port conflicts and operational diagnostics.
+- [Future Improvements & Roadmap](docs/future_improvements.md): Distributed streaming, eBPF, and LLM co-pilot roadmap.
+- [Security Assumptions & Invariants](docs/security_assumptions.md): Safety guardrails and trust invariants.
+- [Known Limitations](docs/known_limitations.md): Technical trade-offs and virtualization scope.
 
 ---
 
@@ -156,23 +157,22 @@ python3 cli.py teardown
 ```
 SOC/
 ├── LICENSE                       # MIT License
-├── cli.py                        # Unified lab CLI
+├── cli.py                        # Unified lab CLI (dashboard, simulate, respond, report, serve)
 ├── docker-compose.yml            # Multi-network Docker Compose infrastructure
 ├── docker/                       # Container Dockerfiles and configs
-│   ├── Dockerfile.ad
-│   ├── Dockerfile.app
-│   ├── Dockerfile.linux
-│   ├── Dockerfile.siem
-│   └── nginx.conf
-├── docs/                         # Architecture and technical documentation
-│   ├── ad_structure.md
+├── docs/                         # Comprehensive engineering documentation
 │   ├── architecture.md
-│   ├── attack_simulation.md
+│   ├── demonstration_guide.md
 │   ├── detection_engineering.md
+│   ├── future_improvements.md
 │   ├── incident_response_guide.md
+│   ├── known_limitations.md
 │   ├── logging_architecture.md
-│   ├── network_diagram.md
-│   └── vulnerabilities.md
+│   ├── mitre_coverage.md
+│   ├── security_assumptions.md
+│   ├── testing_guide.md
+│   ├── threat_model.md
+│   └── troubleshooting.md
 ├── pyproject.toml                # Build system & pytest configuration
 ├── requirements.txt              # Pinned dependencies
 ├── scripts/                      # Management and verification scripts
@@ -181,20 +181,15 @@ SOC/
 │   ├── teardown.sh
 │   └── validate_isolation.py
 ├── src/                          # Core source code
-│   ├── core/                     # Configuration, topology, logging
+│   ├── core/                     # Configuration, topology, metrics, health, logging
 │   ├── detection/                # MITRE detection rules, engine, alert store
 │   ├── infra/                    # Active Directory and Linux server modules
-│   ├── response/                 # Incident models, investigation engine, automation, playbooks
-│   ├── siem/                     # SIEM collector, ECS models, event store, parsers
+│   ├── response/                 # Incident models, investigation, SOAR automation, reporting
+│   ├── siem/                     # SIEM collector, dashboard, ECS models, event store
 │   ├── simulation/               # Attack simulation framework, scenarios, runner
 │   └── vulnapp/                  # Vulnerable enterprise portal & API
 ├── terraform/                    # Infrastructure as Code modules
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   ├── terraform.tfvars.example
-│   └── modules/
-└── tests/                        # Comprehensive test suite
+└── tests/                        # Comprehensive test suite (unit and integration)
     ├── unit/
     └── integration/
 ```
@@ -203,13 +198,13 @@ SOC/
 
 ## Security Guidelines
 
-This lab is created solely for defensive security research and education.
+This lab is created solely for defensive security engineering research and education.
 - All intentionally vulnerable components reside strictly inside the isolated application tier.
 - No real secrets, cloud API keys, or production credentials are used.
-- Adheres strictly to project engineering standards, security isolation guidelines, and architectural policies.
+- Network boundaries strictly isolate the lab from public networks.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](file:///home/yasaman/SOC/LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
