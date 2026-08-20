@@ -7,6 +7,7 @@ execute exclusively against approved local laboratory infrastructure and synthet
 import ipaddress
 import re
 from typing import List
+import urllib.parse
 from src.core.logging import get_logger
 
 logger = get_logger("simulation.safety")
@@ -44,23 +45,25 @@ class LabSafetyGuardrail:
         "edge-proxy.lab.local",
         "wkstn01.corp.enterprise.local",
         "wkstn-win10",
+        "db01.app.local",
     ]
 
     APPROVED_DOMAIN_SUFFIXES: List[str] = [
         ".lab.local",
         ".corp.enterprise.local",
         ".app.local",
-        ".local",
+        ".secmon.local",
     ]
 
     @classmethod
     def is_safe_ip(cls, ip_str: str) -> bool:
-        """Check if an IPv4 address resides within the approved lab subnets."""
+        """Check if an IP address resides within the approved lab subnets."""
         try:
-            addr = ipaddress.IPv4Address(ip_str)
-            for net in cls.APPROVED_NETWORKS:
-                if addr in net:
-                    return True
+            addr = ipaddress.ip_address(ip_str)
+            if isinstance(addr, ipaddress.IPv4Address):
+                for net in cls.APPROVED_NETWORKS:
+                    if addr in net:
+                        return True
             return False
         except ValueError:
             return False
@@ -68,27 +71,49 @@ class LabSafetyGuardrail:
     @classmethod
     def is_safe_target(cls, target: str) -> bool:
         """Validate if target hostname, IP, or URL is strictly within lab boundaries."""
-        if not target:
+        if not target or not isinstance(target, str):
             return False
 
-        clean_target = target.strip().lower()
+        clean = target.strip()
+        if not clean:
+            return False
 
-        # Remove http/https protocol prefix if present
-        clean_target = re.sub(r"^https?://", "", clean_target)
-        # Strip port number if present
-        clean_target = clean_target.split(":")[0].split("/")[0]
+        # Extract hostname safely
+        if "://" in clean or clean.startswith("//"):
+            try:
+                parsed = urllib.parse.urlsplit(clean if "://" in clean else f"http:{clean}")
+                hostname = parsed.hostname
+            except Exception:
+                return False
+        else:
+            # Strip userinfo if present
+            if "@" in clean:
+                clean = clean.split("@")[-1]
+            # Strip paths, queries, fragments
+            clean = clean.split("/")[0].split("?")[0].split("#")[0]
+            if clean.startswith("[") and "]" in clean:
+                hostname = clean[1:clean.index("]")]
+            elif ":" in clean:
+                hostname = clean.split(":")[0]
+            else:
+                hostname = clean
+
+        if not hostname:
+            return False
+
+        hostname = hostname.strip().lower()
 
         # Check direct IP
-        if cls.is_safe_ip(clean_target):
+        if cls.is_safe_ip(hostname):
             return True
 
         # Check explicit hostname
-        if clean_target in cls.APPROVED_HOSTNAMES:
+        if hostname in [h.lower() for h in cls.APPROVED_HOSTNAMES]:
             return True
 
         # Check domain suffix
         for suffix in cls.APPROVED_DOMAIN_SUFFIXES:
-            if clean_target.endswith(suffix):
+            if hostname.endswith(suffix):
                 return True
 
         return False
@@ -99,7 +124,7 @@ class LabSafetyGuardrail:
         if not cls.is_safe_target(target):
             error_msg = (
                 f"SAFETY BOUNDARY VIOLATION: Target '{target}' is not within approved lab subnets "
-                f"(172.28.0.0/16, 127.0.0.1, *.corp.enterprise.local). Execution blocked."
+                f"(172.28.0.0/16, 127.0.0.1, *.corp.enterprise.local, *.app.local, *.secmon.local, *.lab.local). Execution blocked."
             )
             logger.critical(error_msg)
             raise SafetyBoundaryViolation(error_msg)
