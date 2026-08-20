@@ -292,7 +292,7 @@ class IncidentReportGenerator:
 
     @classmethod
     def to_html(cls, incident: Incident) -> str:
-        """Generate self-contained, printable, polished HTML incident report."""
+        """Generate self-contained, printable, polished HTML incident report across all 12 sections."""
         ts_str = incident.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
         gen_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -305,18 +305,18 @@ class IncidentReportGenerator:
         }
         sev_color = sev_colors.get(incident.severity.value, "#F59E0B")
 
-        # Build timeline rows
+        # 3. Build timeline rows
         timeline_rows = []
         if incident.timeline:
             for t in incident.timeline:
                 t_str = t.timestamp.strftime("%Y-%m-%d %H:%M:%S")
                 mark = "⚡ " if t.is_key_event else ""
-                row = f"<tr><td>{t_str}</td><td><code>{html.escape(t.category)}</code></td><td>{mark}<strong>{html.escape(t.title)}</strong></td><td>{html.escape(t.description)}</td></tr>"
+                row = f"<tr><td>{html.escape(t_str)}</td><td><code>{html.escape(t.category)}</code></td><td>{mark}<strong>{html.escape(t.title)}</strong></td><td>{html.escape(t.description)}</td></tr>"
                 timeline_rows.append(row)
         else:
-            timeline_rows.append("<tr><td colspan='4'>No timeline events.</td></tr>")
+            timeline_rows.append("<tr><td colspan='4'>No timeline events recorded.</td></tr>")
 
-        # Build IOC rows
+        # 4. Build IOC rows
         ioc_rows = []
         if incident.indicators:
             for i in incident.indicators:
@@ -325,7 +325,7 @@ class IncidentReportGenerator:
         else:
             ioc_rows.append("<tr><td colspan='5'>No IOCs recorded.</td></tr>")
 
-        # Build MITRE rows
+        # 6. Build MITRE rows
         mitre_rows = []
         if incident.mitre_attack:
             for m in incident.mitre_attack:
@@ -333,9 +333,9 @@ class IncidentReportGenerator:
                 row = f"<tr><td><code>{html.escape(m.tactic.value)}</code></td><td><code>{html.escape(m.technique_id)}</code></td><td>{html.escape(m.technique_name)}</td><td>{sub_text}</td></tr>"
                 mitre_rows.append(row)
         else:
-            mitre_rows.append("<tr><td colspan='4'>No MITRE mappings.</td></tr>")
+            mitre_rows.append("<tr><td colspan='4'>No MITRE ATT&CK mappings.</td></tr>")
 
-        # Build Evidence rows
+        # 7. Build Evidence items
         evidence_items = []
         if incident.evidence_references:
             for e in incident.evidence_references:
@@ -343,29 +343,64 @@ class IncidentReportGenerator:
         else:
             evidence_items.append("<li>No evidence records attached.</li>")
 
-        # Build Actions rows
+        # 8. Build Actions items
         action_items = []
         if incident.analyst_actions:
             for a in incident.analyst_actions:
                 a_ts = a.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                action_items.append(f"<li><code>[{a_ts}]</code> <strong>{html.escape(a.action_type.upper())}</strong> by <code>{html.escape(a.actor)}</code>: {html.escape(a.description)} (Status: {html.escape(a.status)})</li>")
+                action_items.append(f"<li><code>[{html.escape(a_ts)}]</code> <strong>{html.escape(a.action_type.upper())}</strong> by <code>{html.escape(a.actor)}</code>: {html.escape(a.description)} (Status: {html.escape(a.status)})</li>")
         else:
             action_items.append("<li>No actions recorded.</li>")
 
-        # Build Lessons Learned items
+        # 9. Containment items
+        containment_items = []
+        cont_actions = [a for a in incident.analyst_actions if a.action_type in ("containment", "isolation", "block")]
+        if cont_actions:
+            for a in cont_actions:
+                a_ts = a.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                containment_items.append(f"<li><code>[{html.escape(a_ts)}]</code> <strong>{html.escape(a.action_type.upper())}</strong>: {html.escape(a.description)}</li>")
+        else:
+            containment_items.append("<li>No active containment actions required.</li>")
+
+        # 10. Root cause items
+        root_cause_body = []
+        if incident.root_cause_analysis:
+            root_cause_body.append(f"<p><strong>Root Cause:</strong> {html.escape(incident.root_cause_analysis.summary)}</p>")
+            root_cause_body.append(f"<p><strong>Initial Attack Vector:</strong> {html.escape(incident.root_cause_analysis.initial_vector)}</p>")
+            root_cause_body.append(f"<p><strong>Impact Assessment:</strong> {html.escape(incident.root_cause_analysis.impact_assessment)}</p>")
+            if incident.root_cause_analysis.vulnerabilities_exploited:
+                vulns = "".join(f"<li>{html.escape(v)}</li>" for v in incident.root_cause_analysis.vulnerabilities_exploited)
+                root_cause_body.append(f"<h4>Exploited Vulnerabilities</h4><ul>{vulns}</ul>")
+            if incident.root_cause_analysis.attack_path:
+                paths = "".join(f"<li>{html.escape(p)}</li>" for p in incident.root_cause_analysis.attack_path)
+                root_cause_body.append(f"<h4>Reconstructed Attack Path</h4><ol>{paths}</ol>")
+        else:
+            root_cause_body.append("<p>Root cause analysis pending.</p>")
+
+        # 11. Remediation items
+        rem_items = []
+        rem_actions = [a for a in incident.analyst_actions if a.action_type in ("remediation", "recovery", "rollback")]
+        if rem_actions:
+            for r in rem_actions:
+                rem_items.append(f"<li>{html.escape(r.description)}</li>")
+        else:
+            rem_items.append("<li>Remediation steps in progress or verified clean.</li>")
+
+        # 12. Build Lessons Learned items
         lessons_body = []
         if incident.lessons_learned:
             lessons_body.append(f"<p>{html.escape(incident.lessons_learned.root_cause_summary)}</p>")
             if incident.lessons_learned.preventive_recommendations:
                 recs = "".join(f"<li>{html.escape(r)}</li>" for r in incident.lessons_learned.preventive_recommendations)
                 lessons_body.append(f"<h3>Preventive Recommendations</h3><ul>{recs}</ul>")
+            if incident.lessons_learned.detection_gaps:
+                gaps = "".join(f"<li>{html.escape(g)}</li>" for g in incident.lessons_learned.detection_gaps)
+                lessons_body.append(f"<h3>Detection Engineering Improvements</h3><ul>{gaps}</ul>")
+            if incident.lessons_learned.hardening_actions:
+                hardens = "".join(f"<li>{html.escape(h)}</li>" for h in incident.lessons_learned.hardening_actions)
+                lessons_body.append(f"<h3>Infrastructure Hardening Actions</h3><ul>{hardens}</ul>")
         else:
-            lessons_body.append("<p>No lessons learned recorded.</p>")
-
-        root_cause_body = []
-        if incident.root_cause_analysis:
-            root_cause_body.append(f"<p><strong>Root Cause:</strong> {html.escape(incident.root_cause_analysis.summary)}</p>")
-            root_cause_body.append(f"<p><strong>Impact Assessment:</strong> {html.escape(incident.root_cause_analysis.impact_assessment)}</p>")
+            lessons_body.append("<p>No post-incident recommendations recorded.</p>")
 
         hosts_str = ", ".join(f"<code>{html.escape(a)}</code>" for a in incident.affected_assets) or "None"
         users_str = ", ".join(f"<code>{html.escape(u)}</code>" for u in incident.affected_users) or "None"
@@ -425,7 +460,7 @@ class IncidentReportGenerator:
     padding: 24px;
     margin-bottom: 24px;
   }}
-  h1, h2, h3 {{
+  h1, h2, h3, h4 {{
     color: #F9FAFB;
     margin-top: 0;
   }}
@@ -458,7 +493,7 @@ class IncidentReportGenerator:
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 13px;
   }}
-  ul {{
+  ul, ol {{
     padding-left: 20px;
   }}
   li {{
@@ -492,24 +527,24 @@ class IncidentReportGenerator:
   <div class="header-card">
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <h1>{html.escape(incident.title)}</h1>
-      <span class="badge" style="background:{sev_color}; color:#fff;">{incident.severity.value.upper()}</span>
+      <span class="badge" style="background:{sev_color}; color:#fff;">{html.escape(incident.severity.value.upper())}</span>
     </div>
     <div class="meta-grid">
       <div class="meta-item">
         <div class="meta-label">Incident ID</div>
-        <div class="meta-value"><code>{incident.incident_id}</code></div>
+        <div class="meta-value"><code>{html.escape(incident.incident_id)}</code></div>
       </div>
       <div class="meta-item">
         <div class="meta-label">Timestamp</div>
-        <div class="meta-value">{ts_str}</div>
+        <div class="meta-value">{html.escape(ts_str)}</div>
       </div>
       <div class="meta-item">
         <div class="meta-label">Status</div>
-        <div class="meta-value"><span class="badge" style="background:#374151;">{incident.status.value.upper()}</span></div>
+        <div class="meta-value"><span class="badge" style="background:#374151;">{html.escape(incident.status.value.upper())}</span></div>
       </div>
       <div class="meta-item">
         <div class="meta-label">Disposition</div>
-        <div class="meta-value">{incident.final_disposition.value.upper()}</div>
+        <div class="meta-value">{html.escape(incident.final_disposition.value.upper())}</div>
       </div>
     </div>
   </div>
@@ -517,15 +552,14 @@ class IncidentReportGenerator:
   <div class="section">
     <h2>1. Executive Summary</h2>
     <p>{html.escape(incident.description)}</p>
-    {"".join(root_cause_body)}
   </div>
 
   <div class="section">
     <h2>2. Technical Summary</h2>
     <div class="meta-grid">
-      <div class="meta-item"><div class="meta-label">Containment</div><div class="meta-value">{incident.containment_status.value.upper()}</div></div>
-      <div class="meta-item"><div class="meta-label">Remediation</div><div class="meta-value">{incident.remediation_status.value.upper()}</div></div>
-      <div class="meta-item"><div class="meta-label">Recovery</div><div class="meta-value">{incident.recovery_status.value.upper()}</div></div>
+      <div class="meta-item"><div class="meta-label">Containment</div><div class="meta-value">{html.escape(incident.containment_status.value.upper())}</div></div>
+      <div class="meta-item"><div class="meta-label">Remediation</div><div class="meta-value">{html.escape(incident.remediation_status.value.upper())}</div></div>
+      <div class="meta-item"><div class="meta-label">Recovery</div><div class="meta-value">{html.escape(incident.recovery_status.value.upper())}</div></div>
       <div class="meta-item"><div class="meta-label">Timeline Events</div><div class="meta-value">{len(incident.timeline)}</div></div>
     </div>
   </div>
@@ -577,19 +611,40 @@ class IncidentReportGenerator:
   </div>
 
   <div class="section">
-    <h2>8. Containment & Remediation Audit Log</h2>
+    <h2>8. Analyst Actions & Automation Log</h2>
     <ul>
       {"".join(action_items)}
     </ul>
   </div>
 
   <div class="section">
-    <h2>9. Lessons Learned & Recommendations</h2>
+    <h2>9. Containment Actions & Status</h2>
+    <p><strong>Containment Status:</strong> <code>{html.escape(incident.containment_status.value.upper())}</code></p>
+    <ul>
+      {"".join(containment_items)}
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>10. Root Cause Analysis</h2>
+    {"".join(root_cause_body)}
+  </div>
+
+  <div class="section">
+    <h2>11. Remediation & Recovery Steps</h2>
+    <p><strong>Remediation Status:</strong> <code>{html.escape(incident.remediation_status.value.upper())}</code> | <strong>Recovery Status:</strong> <code>{html.escape(incident.recovery_status.value.upper())}</code></p>
+    <ul>
+      {"".join(rem_items)}
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>12. Lessons Learned & Hardening Recommendations</h2>
     {"".join(lessons_body)}
   </div>
 
   <div style="text-align:center; color:var(--text-muted); font-size:12px; margin-top:30px;">
-    Enterprise Security Operations Center &bull; Generated {gen_time}
+    Enterprise Security Operations Center &bull; Generated {html.escape(gen_time)}
   </div>
 </div>
 </body>
