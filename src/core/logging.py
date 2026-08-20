@@ -14,6 +14,8 @@ from typing import Any, Dict, Optional
 # Regular expressions to sanitize common sensitive patterns from log messages
 SENSITIVE_PATTERNS = [
     (re.compile(r'(password|passwd|pwd|secret|api_key|token|access_token|private_key)\s*[:=]\s*["\']?([^"\'\s,;]+)["\']?', re.IGNORECASE), r'\1=***REDACTED***'),
+    (re.compile(r'(postgresql|postgres|mysql|sqlite|redis|mongodb)://([^:]+):([^@]+)@', re.IGNORECASE), r'\1://\2:***REDACTED***@'),
+    (re.compile(r'eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]+'), '***REDACTED_JWT***'),
     (re.compile(r'(bearer\s+)([a-zA-Z0-9_\-\.]{15,})', re.IGNORECASE), r'\1***REDACTED***'),
     (re.compile(r'-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY-----'), '***REDACTED_PRIVATE_KEY***'),
 ]
