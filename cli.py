@@ -2,6 +2,7 @@
 """Unified CLI for Enterprise Attack Detection & Response Lab."""
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -12,6 +13,8 @@ ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
 from src.core.config import settings
+from src.core.health import DeepHealthChecker
+from src.core.metrics import SOCMetricsCalculator
 from src.core.topology import EnterpriseLabTopology
 from src.infra.ad_directory.server import ActiveDirectoryServer
 
@@ -25,6 +28,7 @@ def cmd_status(args):
     print(f"Linux Server:       {settings.linux_srv_hostname} (SSH: {settings.linux_ssh_port})")
     print(f"Web Application:    http://{settings.app_host}:{settings.app_port}")
     print(f"SIEM Collector:     http://{settings.siem_host}:{settings.siem_http_port}")
+    print(f"SOC Web Dashboard:  http://{settings.siem_host}:{settings.siem_http_port}/dashboard")
     print("-" * 70)
 
     topo = EnterpriseLabTopology()
@@ -36,6 +40,157 @@ def cmd_status(args):
     for node in topo.nodes:
         print(f"  • {node.hostname:<35} {node.ip_address:<16} [{', '.join(node.services)}]")
     print("=" * 70)
+
+
+def cmd_dashboard(args):
+    """Terminal SOC Dashboard & Overview."""
+    from src.detection.storage import AlertStore
+    from src.response.storage import AuditStore, IncidentStore
+    from src.siem.storage import EventStore
+
+    calc = SOCMetricsCalculator()
+    summary = calc.calculate_metrics()
+
+    print("=" * 80)
+    print(" 🛡️  ENTERPRISE SOC OPERATIONS DASHBOARD & MONITORING CONSOLE")
+    print("=" * 80)
+    print(f" Web UI Dashboard: http://localhost:{settings.siem_http_port}/dashboard")
+    print(f" System Health:    {summary.system_health_score:.1f}% [OPERATIONAL]")
+    print("-" * 80)
+
+    print(" 📊 KEY SECURITY OPERATIONS METRICS")
+    print(f"   • Telemetry Events:       {summary.total_telemetry_events:<10} • Active Alerts:        {summary.total_alerts}")
+    print(f"   • Open Incidents:         {summary.open_incidents:<10} • Contained/Resolved:   {summary.contained_incidents + summary.resolved_incidents}")
+    print(f"   • Mean Time To Detect:    {summary.mttd_seconds:.2f}s{' ' * 5} • Mean Time To Respond: {summary.mttr_seconds:.2f}s")
+    print(f"   • Detection Rate:         {summary.detection_rate_percent:.1f}%{' ' * 6} • False Positive Rate:   {summary.false_positive_rate_percent:.1f}%")
+    print(f"   • MITRE ATT&CK Coverage:  {summary.detection_coverage_percent:.1f}% ({summary.covered_mitre_techniques} Techniques Covered)")
+    print("-" * 80)
+
+    print(" 🎯 MITRE ATT&CK TACTICS COVERAGE")
+    tactic_list = [
+        "Initial Access", "Execution", "Persistence", "Privilege Escalation",
+        "Defense Evasion", "Credential Access", "Discovery", "Lateral Movement",
+        "Collection", "Command and Control", "Impact"
+    ]
+    for i in range(0, len(tactic_list), 2):
+        t1 = tactic_list[i]
+        c1 = summary.alerts_by_tactic.get(t1, 0)
+        t2 = tactic_list[i + 1] if i + 1 < len(tactic_list) else ""
+        c2 = summary.alerts_by_tactic.get(t2, 0) if t2 else ""
+        t2_str = f"• {t2:<24} {c2}" if t2 else ""
+        print(f"   • {t1:<24} {c1:<6} {t2_str}")
+    print("=" * 80)
+
+
+def cmd_metrics(args):
+    """Output calculated real-data security metrics."""
+    calc = SOCMetricsCalculator()
+    summary = calc.calculate_metrics()
+
+    if args.json:
+        print(json.dumps(summary.to_dict(), indent=2))
+    else:
+        print("=" * 70)
+        print("Enterprise Attack Detection & Response Lab - Security Metrics")
+        print("=" * 70)
+        print(f"Detection Rate:            {summary.detection_rate_percent:.1f}%")
+        print(f"False-Positive Rate:       {summary.false_positive_rate_percent:.1f}%")
+        print(f"Detection Coverage:        {summary.detection_coverage_percent:.1f}%")
+        print(f"Mean Time To Detect (MTTD): {summary.mttd_seconds:.2f} seconds")
+        print(f"Mean Time To Respond (MTTR):{summary.mttr_seconds:.2f} seconds")
+        print(f"Total Telemetry Events:    {summary.total_telemetry_events}")
+        print(f"Total Security Alerts:     {summary.total_alerts}")
+        print(f"Total Incidents:           {summary.total_incidents}")
+        print(f"Response Actions Logged:   {summary.total_response_actions}")
+        print(f"System Health Score:       {summary.system_health_score:.1f}%")
+        print("=" * 70)
+
+
+def cmd_report(args):
+    """Generate structured multi-format Incident Response report."""
+    from src.response.models import (
+        ContainmentStatus,
+        Incident,
+        IncidentDisposition,
+        IncidentSeverity,
+        IncidentStatus,
+        Indicator,
+        IndicatorType,
+        LessonsLearned,
+        RecoveryStatus,
+        RemediationStatus,
+        RootCauseAnalysis,
+        TimelineEntry,
+    )
+    from src.response.reporting import IncidentReportGenerator
+    from src.response.storage import IncidentStore
+
+    store = IncidentStore()
+    inc_id = args.incident or "INC-DEMO-001"
+    inc = store.get_incident(inc_id)
+
+    if not inc:
+        # Create a rich demonstration incident if none exists in runtime store
+        now = settings.validate_all()
+        inc = Incident(
+            incident_id=inc_id,
+            title="Credential Compromise & Lateral Movement",
+            description="Adversary performed Kerberoasting and lateral pivot to core database.",
+            severity=IncidentSeverity.HIGH,
+            status=IncidentStatus.RECOVERED,
+            containment_status=ContainmentStatus.CONTAINED,
+            remediation_status=RemediationStatus.REMEDIATED,
+            recovery_status=RecoveryStatus.VERIFIED,
+            final_disposition=IncidentDisposition.TRUE_POSITIVE_MALICIOUS,
+            affected_assets=["dc01.corp.enterprise.local", "172.28.20.10", "172.28.20.15"],
+            affected_users=["svc_sql", "jdoe"],
+            detection_source=["ALT-001", "DET-CRED-002"],
+        )
+        inc.root_cause_analysis = RootCauseAnalysis(
+            summary="Weak Kerberos RC4-HMAC ticket encryption permitted offline hash cracking.",
+            initial_vector="Compromised application workstation",
+            vulnerabilities_exploited=["RC4 Kerberos Service Ticket Encryption"],
+            attack_path=["TGS Request -> Hash Extraction -> Lateral SSH Access"],
+            impact_assessment="Lab assets isolated and verified clean.",
+        )
+        inc.lessons_learned = LessonsLearned(
+            root_cause_summary="Legacy encryption types permitted offline ticket extraction.",
+            preventive_recommendations=["Enforce AES-256 Kerberos across all SPNs."],
+            detection_gaps=["Add correlation for rapid TGS requests."],
+            hardening_actions=["Audit all domain service accounts."],
+        )
+
+    fmt = args.format.lower()
+    if fmt == "json":
+        output = IncidentReportGenerator.to_json(inc)
+    elif fmt == "html":
+        output = IncidentReportGenerator.to_html(inc)
+    else:
+        output = IncidentReportGenerator.to_markdown(inc)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(output)
+        print(f"Report saved to: {args.output}")
+    else:
+        print(output)
+
+
+def cmd_serve(args):
+    """Run SIEM & SOC Web Dashboard server."""
+    import uvicorn
+    from src.siem.app import app
+
+    host = args.host or settings.siem_host
+    port = args.port or settings.siem_http_port
+
+    print("=" * 70)
+    print(f"Starting Enterprise SOC Platform & Web Dashboard on http://{host}:{port}")
+    print(f"Web Dashboard URL: http://{host}:{port}/dashboard")
+    print(f"Health API URL:    http://{host}:{port}/health")
+    print("=" * 70)
+
+    uvicorn.run(app, host=host, port=port)
 
 
 def cmd_health(args):
@@ -223,7 +378,6 @@ def cmd_incidents(args):
     from src.response.playbooks import generate_incident_report_markdown
     from src.response.storage import IncidentStore
 
-    # Standalone incident demonstration if none in runtime store
     inc_store = IncidentStore()
     if args.id:
         inc = inc_store.get_incident(args.id)
@@ -405,7 +559,6 @@ def cmd_audit(args):
     """View response action audit trail."""
     from src.response.storage import AuditStore
 
-    # Demonstrative audit entries
     audit_store = AuditStore()
     entries = audit_store.list_entries(limit=args.limit)
     print("=" * 80)
@@ -434,6 +587,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Lab commands")
 
     subparsers.add_parser("status", help="Show lab topology and component status")
+    subparsers.add_parser("dashboard", help="Display terminal SOC operations dashboard")
     subparsers.add_parser("health", help="Execute automated health checks")
     subparsers.add_parser("validate", help="Validate network isolation and trust boundaries")
     subparsers.add_parser("bootstrap", help="Bootstrap and verify lab baseline")
@@ -441,6 +595,18 @@ def main():
     subparsers.add_parser("detections", help="List registered detection rules and MITRE ATT&CK coverage")
     subparsers.add_parser("alerts", help="View security alerts generated by detection engine")
     subparsers.add_parser("test", help="Run automated test suite")
+
+    met_parser = subparsers.add_parser("metrics", help="Display live security operations metrics (MTTD, MTTR, coverage)")
+    met_parser.add_argument("--json", action="store_true", help="Output metrics in JSON format")
+
+    rep_parser = subparsers.add_parser("report", help="Generate structured incident response reports")
+    rep_parser.add_argument("--incident", "-i", help="Incident ID to generate report for (default: demo incident)")
+    rep_parser.add_argument("--format", "-f", choices=["md", "json", "html"], default="md", help="Report output format")
+    rep_parser.add_argument("--output", "-o", help="File path to save report output")
+
+    srv_parser = subparsers.add_parser("serve", help="Run the SIEM Collector and SOC Web Dashboard server")
+    srv_parser.add_argument("--host", default="0.0.0.0", help="Binding host address")
+    srv_parser.add_argument("--port", type=int, default=8088, help="Binding HTTP port")
 
     sim_parser = subparsers.add_parser("simulate", help="Run attack simulation scenarios")
     sim_parser.add_argument("--scenario", "-s", help="Specific scenario ID to run (e.g., SCN-INIT-001)")
@@ -471,6 +637,10 @@ def main():
 
     cmd_map = {
         "status": cmd_status,
+        "dashboard": cmd_dashboard,
+        "metrics": cmd_metrics,
+        "report": cmd_report,
+        "serve": cmd_serve,
         "health": cmd_health,
         "validate": cmd_validate,
         "bootstrap": cmd_bootstrap,
