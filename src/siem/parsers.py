@@ -22,6 +22,29 @@ from src.siem.models import (
 )
 
 
+def _parse_timestamp(raw_ts: Any) -> datetime:
+    """Parse various timestamp representations into timezone-aware UTC datetime."""
+    if isinstance(raw_ts, datetime):
+        if raw_ts.tzinfo is None:
+            return raw_ts.replace(tzinfo=timezone.utc)
+        return raw_ts
+    if isinstance(raw_ts, (int, float)):
+        try:
+            return datetime.fromtimestamp(raw_ts, tz=timezone.utc)
+        except Exception:
+            return datetime.now(timezone.utc)
+    if isinstance(raw_ts, str) and raw_ts.strip():
+        try:
+            clean = raw_ts.strip().replace("Z", "+00:00")
+            dt = datetime.fromisoformat(clean)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            pass
+    return datetime.now(timezone.utc)
+
+
 class WindowsEventParser:
     """Parser for Windows Security Auditing, Sysmon, and PowerShell event logs."""
 
@@ -52,6 +75,13 @@ class WindowsEventParser:
     def parse_dict(
         cls, data: Dict[str, Any], source_ip: str = "127.0.0.1"
     ) -> ECSEvent:
+        if not isinstance(data, dict):
+            return ECSEvent(
+                timestamp=datetime.now(timezone.utc),
+                event=EventMetadata(category=EventCategory.SYSTEM, action="windows.invalid"),
+                message=str(data),
+            )
+
         event_id = data.get("event_id") or data.get("EventID")
         category = cls.CATEGORY_MAP.get(event_id, EventCategory.SYSTEM)
 
@@ -77,8 +107,11 @@ class WindowsEventParser:
         file_path = data.get("target_filename") or data.get("TargetFilename")
         dns_query = data.get("query_name") or data.get("QueryName")
 
+        raw_ts = data.get("timestamp") or data.get("@timestamp") or data.get("TimeCreated") or data.get("UtcTime")
+        event_ts = _parse_timestamp(raw_ts)
+
         return ECSEvent(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=event_ts,
             event=EventMetadata(
                 category=category,
                 action=action,
@@ -112,7 +145,7 @@ class WindowsEventParser:
             file=FileInfo(path=file_path) if file_path else None,
             dns=DNSInfo(query_name=dns_query) if dns_query else None,
             message=data.get("message", f"Windows Event {event_id}"),
-            raw_event=json.dumps(data),
+            raw_event=json.dumps(data) if isinstance(data, dict) else str(data),
             custom={"windows": {"event_id": event_id}},
         )
 
@@ -133,6 +166,7 @@ class AuditdParser:
             return None
 
         record_type = match.group("type")
+        epoch_str = match.group("epoch")
         kv_pairs = match.group("kv")
 
         # Parse key=value pairs
@@ -150,8 +184,13 @@ class AuditdParser:
         pid_str = parsed.get("pid")
         uid_str = parsed.get("uid") or parsed.get("auid")
 
+        try:
+            event_ts = datetime.fromtimestamp(float(epoch_str), tz=timezone.utc)
+        except Exception:
+            event_ts = datetime.now(timezone.utc)
+
         return ECSEvent(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=event_ts,
             event=EventMetadata(
                 category=category,
                 action=action,
@@ -188,16 +227,20 @@ class SyslogParser:
         if raw_data.startswith("{") and raw_data.endswith("}"):
             try:
                 data = json.loads(raw_data)
-                if "EventID" in data or "event_id" in data:
-                    return WindowsEventParser.parse_dict(data, source_ip=source_ip)
-                return cls._from_json_payload(data, source_ip, raw_data)
+                if isinstance(data, dict):
+                    if "EventID" in data or "event_id" in data:
+                        return WindowsEventParser.parse_dict(data, source_ip=source_ip)
+                    return cls._from_json_payload(data, source_ip, raw_data)
             except Exception:
                 pass
 
         # 2. RFC 3164 Syslog parsing
         match = cls.RFC3164_PATTERN.match(raw_data)
         if match:
-            pri = int(match.group("pri"))
+            try:
+                pri = int(match.group("pri"))
+            except Exception:
+                pri = 13
             severity_num = pri % 8
             hostname = match.group("host")
             tag = match.group("tag")
@@ -286,6 +329,14 @@ class SyslogParser:
     def _from_json_payload(
         cls, data: Dict[str, Any], source_ip: str, raw_data: str
     ) -> ECSEvent:
+        if not isinstance(data, dict):
+            return ECSEvent(
+                timestamp=datetime.now(timezone.utc),
+                event=EventMetadata(category=EventCategory.SYSTEM, action="json.invalid"),
+                message=raw_data,
+                raw_event=raw_data,
+            )
+
         category_str = data.get("category", "system")
         try:
             category = EventCategory(category_str)
@@ -298,15 +349,22 @@ class SyslogParser:
         except Exception:
             severity = EventSeverity.INFORMATIONAL
 
+        outcome_str = data.get("outcome", EventOutcome.SUCCESS.value)
+        try:
+            outcome = EventOutcome(outcome_str)
+        except Exception:
+            outcome = EventOutcome.SUCCESS
+
+        raw_ts = data.get("timestamp") or data.get("@timestamp")
+        event_ts = _parse_timestamp(raw_ts)
+
         return ECSEvent(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=event_ts,
             event=EventMetadata(
                 category=category,
-                action=data.get("action", "custom_event"),
+                action=str(data.get("action", "custom_event")),
                 severity=severity,
-                outcome=EventOutcome(
-                    data.get("outcome", EventOutcome.SUCCESS.value)
-                ),
+                outcome=outcome,
             ),
             host=HostInfo(
                 name=data.get("host_name"),
@@ -323,7 +381,7 @@ class SyslogParser:
                 name=data.get("process_name"),
                 command_line=data.get("command_line"),
             ),
-            message=data.get("message", ""),
+            message=str(data.get("message", "")),
             raw_event=raw_data,
-            custom=data.get("custom", {}),
+            custom=data.get("custom", {}) if isinstance(data.get("custom"), dict) else {},
         )
