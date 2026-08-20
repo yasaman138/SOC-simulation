@@ -1,29 +1,57 @@
-"""FastAPI Application exposing SIEM HTTP Ingestion, Query, Detection, and Alert APIs."""
+"""FastAPI Application exposing SIEM HTTP Ingestion, Query, Detection, Incident Response, and Dashboard APIs."""
 
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from src.core.config import settings
+from src.core.health import DeepHealthChecker
+from src.core.metrics import SOCMetricsCalculator
 from src.detection.engine import DetectionEngine
 from src.detection.models import Alert, AlertQuery, AlertStatus
 from src.detection.storage import AlertStore
+from src.response.automation import ResponseAutomationEngine
+from src.response.investigation import InvestigationEngine
+from src.response.models import Incident, IncidentQuery, ResponseActionType
+from src.response.playbooks import (
+    CredentialCompromisePlaybook,
+    LateralMovementPlaybook,
+    MalwareRansomwarePlaybook,
+)
+from src.response.reporting import IncidentReportGenerator
+from src.response.storage import AuditStore, IncidentStore
 from src.siem.collector import SIEMCollector
+from src.siem.dashboard import render_dashboard_html
 from src.siem.models import ECSEvent, EventCategory, EventQuery, EventSeverity
 from src.siem.storage import EventStore
 
 # Global singletons
 event_store = EventStore()
 alert_store = AlertStore()
+incident_store = IncidentStore()
+audit_store = AuditStore()
+
 detection_engine = DetectionEngine(alert_store=alert_store)
 siem_collector = SIEMCollector(
     store=event_store, detection_engine=detection_engine
+)
+investigation_engine = InvestigationEngine(
+    event_store=event_store, alert_store=alert_store
+)
+automation_engine = ResponseAutomationEngine(
+    audit_store=audit_store, siem_collector=siem_collector
 )
 
 
 class StatusUpdateRequest(BaseModel):
     status: AlertStatus
     note: Optional[str] = None
+
+
+class PlaybookExecutionRequest(BaseModel):
+    playbook_type: str = "credential"  # credential, lateral, malware
+    actor: str = "soar_automation"
 
 
 @asynccontextmanager
@@ -42,10 +70,15 @@ def create_siem_app(
     store: Optional[EventStore] = None,
     engine: Optional[DetectionEngine] = None,
     alerts: Optional[AlertStore] = None,
+    incidents: Optional[IncidentStore] = None,
+    audits: Optional[AuditStore] = None,
 ) -> FastAPI:
-    """Create and configure the SIEM FastAPI application."""
+    """Create and configure the SIEM & SOC FastAPI application."""
     active_store = store or event_store
     active_alerts = alerts or alert_store
+    active_incidents = incidents or incident_store
+    active_audits = audits or audit_store
+
     active_engine = engine or (
         detection_engine if alerts is None else DetectionEngine(alert_store=active_alerts)
     )
@@ -55,24 +88,64 @@ def create_siem_app(
         else SIEMCollector(store=active_store, detection_engine=active_engine)
     )
 
+    active_inv = InvestigationEngine(event_store=active_store, alert_store=active_alerts)
+    active_auto = ResponseAutomationEngine(audit_store=active_audits, siem_collector=active_collector)
+    active_metrics = SOCMetricsCalculator(
+        event_store=active_store,
+        alert_store=active_alerts,
+        incident_store=active_incidents,
+        audit_store=active_audits,
+    )
+    active_health = DeepHealthChecker(
+        event_store=active_store,
+        alert_store=active_alerts,
+        detection_engine=active_engine,
+        siem_collector=active_collector,
+        incident_store=active_incidents,
+        audit_store=active_audits,
+    )
+
     app = FastAPI(
-        title="Enterprise Lab SIEM & Detection Pipeline",
-        description="Receives, normalizes, stores, analyzes telemetry, and produces MITRE ATT&CK mapped security alerts.",
-        version="0.2.0",
+        title="Enterprise Lab SIEM & SOC Operations Platform",
+        description="Unified SIEM Collector, MITRE ATT&CK Detection Engine, Incident Response Workbench, and Real-Time Dashboard.",
+        version="0.5.0",
         lifespan=lifespan,
     )
 
+    # ---------------- SOC Web Dashboard Endpoints ----------------
+
+    @app.get("/", response_class=HTMLResponse, tags=["Dashboard"])
+    @app.get("/dashboard", response_class=HTMLResponse, tags=["Dashboard"])
+    def get_dashboard() -> str:
+        """Render interactive SOC Analyst Web Dashboard and Investigation Workbench."""
+        return render_dashboard_html()
+
+    # ---------------- Health & Observability Endpoints ----------------
+
     @app.get("/health", tags=["Health"])
     def health_check() -> Dict[str, Any]:
+        """Basic service health check."""
         return {
             "status": "healthy",
-            "service": "siem-collector",
-            "version": "0.2.0",
+            "service": "siem-soc-platform",
+            "version": "0.5.0",
             "stored_events": active_store.count(),
             "active_alerts": active_alerts.count(),
+            "active_incidents": active_incidents.count(),
             "active_detection_rules": len(active_engine.list_rules()),
             "udp_active": active_collector.is_running,
         }
+
+    @app.get("/api/v1/health/deep", tags=["Health"])
+    def deep_health_check() -> Dict[str, Any]:
+        """Run deep diagnostics across all 7 lab infrastructure and security subsystems."""
+        return active_health.check_all().to_dict()
+
+    @app.get("/metrics", tags=["Metrics"])
+    @app.get("/api/v1/metrics/soc", tags=["Metrics"])
+    def get_soc_metrics() -> Dict[str, Any]:
+        """Get live calculated security metrics (MTTD, MTTR, detection rate, false positive rate, coverage)."""
+        return active_metrics.calculate_metrics().to_dict()
 
     # ---------------- Telemetry Ingestion Endpoints ----------------
 
@@ -248,6 +321,158 @@ def create_siem_app(
         """Clear all stored alerts (for lab reset/testing)."""
         active_alerts.clear()
         return {"status": "success", "message": "Alert store cleared"}
+
+    # ---------------- Incident Management & Investigation Endpoints ----------------
+
+    @app.get("/api/v1/incidents", tags=["Incidents"])
+    def query_incidents(
+        search: Optional[str] = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+        offset: int = Query(default=0, ge=0),
+    ) -> Dict[str, Any]:
+        """Query and list stored security incidents."""
+        q = IncidentQuery(search=search, limit=limit, offset=offset)
+        incidents = active_incidents.query_incidents(q)
+        return {
+            "total_matching": len(incidents),
+            "limit": limit,
+            "offset": offset,
+            "incidents": [i.to_dict() for i in incidents],
+        }
+
+    @app.get("/api/v1/incidents/{incident_id}", tags=["Incidents"])
+    def get_incident(incident_id: str) -> Dict[str, Any]:
+        """Retrieve full details of a specific incident."""
+        inc = active_incidents.get_incident(incident_id)
+        if not inc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Incident '{incident_id}' not found",
+            )
+        return inc.to_dict()
+
+    @app.post("/api/v1/incidents/investigate/{alert_id}", tags=["Incidents"])
+    def trigger_investigation(alert_id: str) -> Dict[str, Any]:
+        """Promote an Alert into an Incident and execute automated multi-source correlation."""
+        alert = active_alerts.get_alert(alert_id)
+        if not alert:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Alert '{alert_id}' not found to investigate",
+            )
+        incident = active_inv.create_incident_from_alert(alert)
+        active_incidents.add_incident(incident)
+        return {
+            "status": "success",
+            "incident_id": incident.incident_id,
+            "title": incident.title,
+            "timeline_events": len(incident.timeline),
+            "indicators": len(incident.indicators),
+        }
+
+    @app.post("/api/v1/incidents/{incident_id}/respond", tags=["Incidents"])
+    def execute_incident_response(
+        incident_id: str, request: PlaybookExecutionRequest
+    ) -> Dict[str, Any]:
+        """Execute automated response playbook on an incident."""
+        inc = active_incidents.get_incident(incident_id)
+        if not inc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Incident '{incident_id}' not found",
+            )
+
+        playbooks = {
+            "credential": CredentialCompromisePlaybook(),
+            "lateral": LateralMovementPlaybook(),
+            "malware": MalwareRansomwarePlaybook(),
+        }
+
+        pb = playbooks.get(request.playbook_type.lower())
+        if not pb:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid playbook '{request.playbook_type}'. Options: credential, lateral, malware",
+            )
+
+        resolved_inc = pb.execute(
+            incident=inc,
+            investigation_engine=active_inv,
+            automation_engine=active_auto,
+            actor=request.actor,
+        )
+        active_incidents.update_incident(resolved_inc)
+
+        return {
+            "status": "success",
+            "incident_id": resolved_inc.incident_id,
+            "playbook_executed": pb.name,
+            "containment_status": resolved_inc.containment_status.value,
+            "remediation_status": resolved_inc.remediation_status.value,
+            "recovery_status": resolved_inc.recovery_status.value,
+            "final_disposition": resolved_inc.final_disposition.value,
+        }
+
+    @app.get("/api/v1/reports/incident/{incident_id}", tags=["Reporting"])
+    def get_incident_report(
+        incident_id: str,
+        format: str = Query(default="html", pattern="^(html|md|json)$"),
+    ) -> Response:
+        """Fetch structured Incident Report in HTML, Markdown, or JSON."""
+        inc = active_incidents.get_incident(incident_id)
+        if not inc:
+            # Check for demo incident ID fallback if not present in runtime store
+            if incident_id.startswith("INC-DEMO"):
+                from src.response.models import IncidentSeverity, IncidentStatus, ContainmentStatus, RemediationStatus, RecoveryStatus, IncidentDisposition
+                inc = Incident(
+                    incident_id=incident_id,
+                    title="Kerberoasting and Domain Escalation",
+                    description="Demonstration security incident for report preview.",
+                    severity=IncidentSeverity.HIGH,
+                    status=IncidentStatus.RECOVERED,
+                    containment_status=ContainmentStatus.CONTAINED,
+                    remediation_status=RemediationStatus.REMEDIATED,
+                    recovery_status=RecoveryStatus.VERIFIED,
+                    final_disposition=IncidentDisposition.TRUE_POSITIVE_MALICIOUS,
+                    affected_assets=["dc01.corp.enterprise.local", "172.28.20.10"],
+                    affected_users=["svc_sql", "jdoe"],
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Incident '{incident_id}' not found",
+                )
+
+        if format == "json":
+            return Response(
+                content=IncidentReportGenerator.to_json(inc),
+                media_type="application/json",
+            )
+        elif format == "md":
+            return PlainTextResponse(
+                content=IncidentReportGenerator.to_markdown(inc),
+                media_type="text/markdown",
+            )
+        else:
+            return HTMLResponse(
+                content=IncidentReportGenerator.to_html(inc),
+            )
+
+    @app.get("/api/v1/audit", tags=["SOAR"])
+    def query_audit_logs(
+        action: Optional[ResponseActionType] = None,
+        actor: Optional[str] = None,
+        target: Optional[str] = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> Dict[str, Any]:
+        """Query immutable audit log of automated and analyst response actions."""
+        entries = active_audits.list_entries(
+            action=action, actor=actor, target=target, limit=limit
+        )
+        return {
+            "total_matching": len(entries),
+            "entries": [e.to_dict() for e in entries],
+        }
 
     return app
 
