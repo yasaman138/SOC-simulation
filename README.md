@@ -55,6 +55,9 @@ graph TD
 - **Security Monitoring & SIEM Aggregator**: High-performance SIEM ingestion engine supporting Elastic Common Schema (ECS), HTTP event ingestion (Port 8088), and Syslog UDP (Port 5514).
 - **Detection Engineering Pipeline**: 30 high-fidelity Sigma-aligned detection rules spanning all 10 MITRE ATT&CK tactics with real-time alerting and AlertStore querying.
 - **Attack Simulation & Detection Validation Framework**: Automated, deterministic attack scenarios mapped to MITRE ATT&CK tactics, safety containment guardrails, benign negative controls, and automated coverage matrix generation.
+- **Incident Response & Investigation Engine**: Multi-source telemetry correlation across authentication, process lineage, network flows, and file activity, generating chronological timelines, extracting indicators of compromise (IOCs), and conducting automated root-cause analysis.
+- **Safe Response Automation & Containment**: Auditable containment workflows including user disabling, endpoint network isolation, perimeter IOC blocking, process termination, volatile forensics collection, and rollback capabilities with strict safety guardrails.
+- **Full-Lifecycle Incident Playbooks**: Pre-packaged automated playbooks for Credential Compromise, Lateral Movement, and Malware/Ransomware Data Destruction scenarios with executive and technical Markdown report generation.
 - **Infrastructure as Code (IaC)**: Declarative `docker-compose.yml` and modular Terraform configurations (`terraform/`).
 - **Tooling & Automation**: Unified CLI (`cli.py`), automated health checks (`scripts/healthcheck.py`), isolation validation (`scripts/validate_isolation.py`), bootstrap (`scripts/bootstrap.sh`), and teardown (`scripts/teardown.sh`).
 
@@ -109,7 +112,21 @@ python3 cli.py detections
 python3 cli.py alerts
 ```
 
-### 6. Run Automated Health Checks & Validation
+### 6. Automated Investigation & Incident Response
+```bash
+# Run automated investigation on an attack scenario
+python3 cli.py investigate --scenario SCN-CRED-004
+
+# Execute full incident response playbooks
+python3 cli.py respond --playbook credential
+python3 cli.py respond --playbook lateral
+python3 cli.py respond --playbook malware
+
+# View response action audit trail
+python3 cli.py audit --limit 50
+```
+
+### 7. Run Automated Health Checks & Validation
 ```bash
 # Run health checks
 python3 cli.py health
@@ -118,7 +135,7 @@ python3 cli.py health
 python3 cli.py validate
 ```
 
-### 7. Run the Complete Test Suite
+### 8. Run the Complete Test Suite
 ```bash
 python3 cli.py test
 ```
@@ -127,7 +144,7 @@ Or:
 python3 -m pytest -v
 ```
 
-### 8. Clean Teardown
+### 9. Clean Teardown
 ```bash
 python3 cli.py teardown
 ```
@@ -152,6 +169,7 @@ SOC/
 │   ├── architecture.md
 │   ├── attack_simulation.md
 │   ├── detection_engineering.md
+│   ├── incident_response_guide.md
 │   ├── logging_architecture.md
 │   ├── network_diagram.md
 │   └── vulnerabilities.md
@@ -166,6 +184,7 @@ SOC/
 │   ├── core/                     # Configuration, topology, logging
 │   ├── detection/                # MITRE detection rules, engine, alert store
 │   ├── infra/                    # Active Directory and Linux server modules
+│   ├── response/                 # Incident models, investigation engine, automation, playbooks
 │   ├── siem/                     # SIEM collector, ECS models, event store, parsers
 │   ├── simulation/               # Attack simulation framework, scenarios, runner
 │   └── vulnapp/                  # Vulnerable enterprise portal & API
