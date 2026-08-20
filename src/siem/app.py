@@ -2,9 +2,9 @@
 
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.core.config import settings
 from src.core.health import DeepHealthChecker
 from src.core.metrics import SOCMetricsCalculator
@@ -46,12 +46,12 @@ automation_engine = ResponseAutomationEngine(
 
 class StatusUpdateRequest(BaseModel):
     status: AlertStatus
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=1000)
 
 
 class PlaybookExecutionRequest(BaseModel):
-    playbook_type: str = "credential"  # credential, lateral, malware
-    actor: str = "soar_automation"
+    playbook_type: str = Field(default="credential", max_length=50)
+    actor: str = Field(default="soar_automation", max_length=100)
 
 
 @asynccontextmanager
@@ -112,6 +112,19 @@ def create_siem_app(
         lifespan=lifespan,
     )
 
+    # Security Headers Middleware
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+        )
+        return response
+
     # ---------------- SOC Web Dashboard Endpoints ----------------
 
     @app.get("/", response_class=HTMLResponse, tags=["Dashboard"])
@@ -159,6 +172,8 @@ def create_siem_app(
         event_id = active_collector.ingest_event(event)
         return {"status": "success", "event_id": event_id}
 
+    MAX_BATCH_SIZE = 500
+
     @app.post(
         "/api/v1/events/batch",
         status_code=status.HTTP_201_CREATED,
@@ -166,6 +181,11 @@ def create_siem_app(
     )
     def ingest_batch(events: List[ECSEvent]) -> Dict[str, Any]:
         """Ingest multiple ECS events in a single batch with real-time detection analysis."""
+        if len(events) > MAX_BATCH_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Batch size {len(events)} exceeds maximum limit of {MAX_BATCH_SIZE} events per request.",
+            )
         ids = []
         for ev in events:
             ev_id = active_collector.ingest_event(ev)
