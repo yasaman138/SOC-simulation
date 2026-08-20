@@ -2,7 +2,7 @@
 
 from ipaddress import IPv4Network
 import os
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -96,6 +96,37 @@ class LabSettings(BaseSettings):
                         f"Network CIDR conflict: {subnets[i]} overlaps with {subnets[j]}"
                     )
         return True
+
+    def validate_ports(self) -> bool:
+        """Ensure configured ports are valid and non-colliding within shared host interfaces."""
+        ports = {
+            "AD LDAP": self.ad_ldap_port,
+            "AD LDAPS": self.ad_ldaps_port,
+            "AD Kerberos": self.ad_kerberos_port,
+            "Linux SSH": self.linux_ssh_port,
+            "App HTTP": self.app_port,
+            "SIEM HTTP": self.siem_http_port,
+            "SIEM Syslog UDP": self.siem_syslog_udp_port,
+        }
+
+        for name, port in ports.items():
+            if not (1 <= port <= 65535):
+                raise ValueError(f"Invalid port configuration for {name}: {port}")
+
+        return True
+
+    def validate_all(self) -> bool:
+        """Execute full configuration validation suite."""
+        self.validate_networks()
+        self.validate_ports()
+        return True
+
+    def get_sanitized_config(self) -> Dict[str, Any]:
+        """Export configuration with sensitive keys redacted for diagnostic output."""
+        cfg = self.model_dump()
+        if "app_secret_key" in cfg:
+            cfg["app_secret_key"] = "***REDACTED***"
+        return cfg
 
 
 # Global settings singleton instance
