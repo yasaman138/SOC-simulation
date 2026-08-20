@@ -54,7 +54,7 @@ graph TD
 
 - **Interactive SOC Web Dashboard**: High-aesthetic single-page console (`http://localhost:8088/dashboard`) with real-time telemetry metrics, MITRE ATT&CK heat grid, alert triage feed, incident workbench, and live subsystem diagnostics.
 - **Guided Investigation UX**: Structured 7-step analyst lifecycle:
-  $$\text{Alert} \longrightarrow \text{Incident} \longrightarrow \text{Timeline} \longrightarrow \text{Evidence} \longrightarrow \text{MITRE ATT\&CK} \longrightarrow \text{Response} \longrightarrow \text{Resolution}$$
+  `Alert` ➔ `Incident` ➔ `Timeline` ➔ `Evidence` ➔ `MITRE ATT&CK` ➔ `Response` ➔ `Resolution`
 - **Live SOC Metrics Engine**: Derives real operational metrics (Mean Time to Detect, Mean Time to Respond, Detection Rate, False Positive Rate, MITRE Coverage Score, and Composite System Health).
 - **Multi-Format Incident Reporting**: Synthesizes 12-section incident response reports in Markdown, JSON, and self-contained styled HTML.
 - **Detection Engineering Pipeline**: 30 high-fidelity Sigma-aligned detection rules spanning all 10 MITRE ATT&CK tactics with real-time alerting.
