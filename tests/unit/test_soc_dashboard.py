@@ -201,3 +201,58 @@ def test_deep_health_does_not_pollute_event_store():
 
     # Event count must remain zero (no pollution)
     assert event_store.count() == 0
+
+
+def test_reset_lab_api_endpoint():
+    """Verify POST /api/v1/reset clears all telemetry, alerts, incidents, and audits."""
+    event_store = EventStore()
+    alert_store = AlertStore()
+    inc_store = IncidentStore()
+    app = create_siem_app(store=event_store, alerts=alert_store, incidents=inc_store)
+    client = TestClient(app)
+
+    # Run simulation to populate stores
+    resp = client.post(
+        "/api/v1/simulation/run",
+        json={"scenario": "SCN-CRED-004", "attack": True, "create_incident": True},
+    )
+    assert resp.status_code == 200
+    assert event_store.count() > 0
+    assert alert_store.count() > 0
+
+    # Call Reset endpoint
+    reset_resp = client.post("/api/v1/reset")
+    assert reset_resp.status_code == 200
+    assert reset_resp.json()["status"] == "success"
+
+    # Verify stores are empty
+    assert event_store.count() == 0
+    assert alert_store.count() == 0
+    assert inc_store.count() == 0
+
+
+def test_dashboard_renders_live_metrics_without_flicker():
+    """Verify GET / dashboard renders current session numbers directly in HTML."""
+    event_store = EventStore()
+    alert_store = AlertStore()
+    inc_store = IncidentStore()
+    app = create_siem_app(store=event_store, alerts=alert_store, incidents=inc_store)
+    client = TestClient(app)
+
+    # Populate stores via simulation
+    client.post(
+        "/api/v1/simulation/run",
+        json={"scenario": "SCN-CRED-004", "attack": True, "create_incident": True},
+    )
+    ev_count = event_store.count()
+    assert ev_count > 0
+
+    # Request dashboard HTML
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Verify live count is directly rendered in initial HTML
+    assert f'id="metric-events">{ev_count}</div>' in html
+    assert 'id="metric-events">__INITIAL_EVENTS__' not in html
+
