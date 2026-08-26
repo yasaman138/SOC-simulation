@@ -14,6 +14,7 @@ def render_dashboard_html(metrics: Any = None) -> str:
     incidents_cnt = str(getattr(metrics, "total_incidents", 0) if metrics else 0)
     crit_cnt = str((metrics.alerts_by_severity.get("critical", 0) + metrics.alerts_by_severity.get("high", 0)) if (metrics and hasattr(metrics, "alerts_by_severity") and isinstance(metrics.alerts_by_severity, dict)) else 0)
     open_inc_cnt = str(getattr(metrics, "open_incidents", 0) if metrics else 0)
+    remediated_cnt = str(getattr(metrics, "remediated_incidents", getattr(metrics, "contained_incidents", 0)) if metrics else 0)
     mttd_val = f"{getattr(metrics, 'mttd_seconds', 0.0):.2f}s" if metrics else "0.00s"
     mttr_val = f"{getattr(metrics, 'mttr_seconds', 0.0):.2f}s" if metrics else "0.00s"
     det_rate_val = f"{getattr(metrics, 'detection_rate_percent', 100.0):.1f}%" if metrics else "100.0%"
@@ -146,8 +147,9 @@ def render_dashboard_html(metrics: Any = None) -> str:
     font-size: 0.9rem;
     font-weight: 600;
     border-bottom: 2px solid transparent;
+    border-radius: 8px 8px 0 0;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.25s ease;
     white-space: nowrap;
     display: flex;
     align-items: center;
@@ -155,11 +157,55 @@ def render_dashboard_html(metrics: Any = None) -> str:
   }
   .nav-tab:hover {
     color: var(--text-main);
-    background: rgba(255,255,255,0.02);
+    background: rgba(255,255,255,0.03);
   }
   .nav-tab.active {
     color: var(--cyan);
     border-bottom-color: var(--cyan);
+    background: rgba(6, 182, 212, 0.08);
+    box-shadow: 0 4px 14px rgba(6, 182, 212, 0.25);
+  }
+  .nav-tab.tab-overview-active {
+    color: #06B6D4;
+    border-bottom-color: #06B6D4;
+    background: rgba(6, 182, 212, 0.12);
+    box-shadow: 0 4px 16px rgba(6, 182, 212, 0.35);
+  }
+  .nav-tab.tab-alerts-active {
+    color: #EF4444;
+    border-bottom-color: #EF4444;
+    background: rgba(239, 68, 68, 0.12);
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
+  }
+  .nav-tab.tab-incidents-active {
+    color: #F59E0B;
+    border-bottom-color: #F59E0B;
+    background: rgba(245, 158, 11, 0.12);
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
+  }
+  .nav-tab.tab-investigate-active {
+    color: #818CF8;
+    border-bottom-color: #6366F1;
+    background: rgba(99, 102, 241, 0.15);
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+  }
+  .nav-tab.tab-mitre-active {
+    color: #10B981;
+    border-bottom-color: #10B981;
+    background: rgba(16, 185, 129, 0.12);
+    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35);
+  }
+  .nav-tab.tab-audit-active {
+    color: #38BDF8;
+    border-bottom-color: #38BDF8;
+    background: rgba(56, 189, 248, 0.12);
+    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.35);
+  }
+  .nav-tab.tab-health-active {
+    color: #EC4899;
+    border-bottom-color: #EC4899;
+    background: rgba(236, 72, 153, 0.12);
+    box-shadow: 0 4px 16px rgba(236, 72, 153, 0.35);
   }
 
   /* Main Container */
@@ -500,13 +546,13 @@ def render_dashboard_html(metrics: Any = None) -> str:
 </header>
 
 <div class="nav-tabs">
-  <div class="nav-tab active" onclick="switchTab('overview')">📊 Overview</div>
-  <div class="nav-tab" onclick="switchTab('alerts')">🚨 Security Alerts (<span id="tab-alert-count">__INITIAL_ALERTS__</span>)</div>
-  <div class="nav-tab" onclick="switchTab('incidents')">🛡️ Incident Workbench (<span id="tab-inc-count">__INITIAL_INCIDENTS__</span>)</div>
-  <div class="nav-tab" onclick="switchTab('investigate')">🔍 Investigation UX Flow</div>
-  <div class="nav-tab" onclick="switchTab('mitre')">🎯 MITRE ATT&CK Matrix</div>
-  <div class="nav-tab" onclick="switchTab('audit')">📜 SOAR Audit Trail</div>
-  <div class="nav-tab" onclick="switchTab('health')">🩺 Observability</div>
+  <div class="nav-tab active tab-overview-active" data-tab="overview" onclick="switchTab('overview')">📊 Overview</div>
+  <div class="nav-tab" data-tab="alerts" onclick="switchTab('alerts')">🚨 Security Alerts (<span id="tab-alert-count">__INITIAL_ALERTS__</span>)</div>
+  <div class="nav-tab" data-tab="incidents" onclick="switchTab('incidents')">🛡️ Incident Workbench (<span id="tab-inc-count">__INITIAL_INCIDENTS__</span>)</div>
+  <div class="nav-tab" data-tab="investigate" onclick="switchTab('investigate')">🔍 Investigation UX Flow</div>
+  <div class="nav-tab" data-tab="mitre" onclick="switchTab('mitre')">🎯 MITRE ATT&CK Matrix</div>
+  <div class="nav-tab" data-tab="audit" onclick="switchTab('audit')">📜 SOAR Audit Trail</div>
+  <div class="nav-tab" data-tab="health" onclick="switchTab('health')">🩺 Observability</div>
 </div>
 
 <main class="main-content">
@@ -525,8 +571,13 @@ def render_dashboard_html(metrics: Any = None) -> str:
     </div>
     <div class="stat-card accent-amber">
       <div class="stat-label">Open Incidents</div>
-      <div class="stat-value" id="metric-incidents">__INITIAL_INCIDENTS__</div>
+      <div class="stat-value" id="metric-incidents">__INITIAL_OPEN_INC__</div>
       <div class="stat-sub"><span id="metric-active-incidents">__INITIAL_OPEN_INC__</span> In Triage/Investigation</div>
+    </div>
+    <div class="stat-card accent-green">
+      <div class="stat-label">Remediated / Contained</div>
+      <div class="stat-value" id="metric-remediated">__INITIAL_REMEDIATED__</div>
+      <div class="stat-sub"><span id="metric-remediated-sub">__INITIAL_REMEDIATED__</span> Contained in Session</div>
     </div>
     <div class="stat-card accent-indigo">
       <div class="stat-label">Mean Time To Detect (MTTD)</div>
@@ -801,11 +852,15 @@ def render_dashboard_html(metrics: Any = None) -> str:
   };
 
   function switchTab(tabId) {
-    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => {
+      t.classList.remove('active', 'tab-overview-active', 'tab-alerts-active', 'tab-incidents-active', 'tab-investigate-active', 'tab-mitre-active', 'tab-audit-active', 'tab-health-active');
+    });
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-    const activeNav = Array.from(document.querySelectorAll('.nav-tab')).find(t => t.innerText.toLowerCase().includes(tabId));
-    if (activeNav) activeNav.classList.add('active');
+    const targetTab = document.querySelector(`.nav-tab[data-tab="${tabId}"]`) || Array.from(document.querySelectorAll('.nav-tab')).find(t => t.getAttribute('onclick')?.includes(tabId) || t.innerText.toLowerCase().includes(tabId));
+    if (targetTab) {
+      targetTab.classList.add('active', `tab-${tabId}-active`);
+    }
 
     const target = document.getElementById('tab-' + tabId);
     if (target) target.classList.add('active');
@@ -822,7 +877,37 @@ def render_dashboard_html(metrics: Any = None) -> str:
       if (idx + 1 === stepNum) s.classList.add('active');
       else if (idx + 1 < stepNum) s.classList.add('completed');
     });
+
+    if (stepNum === 7) {
+      document.querySelectorAll('.step-item').forEach((s, idx) => {
+        if (idx + 1 < 7) s.classList.add('completed');
+        else s.classList.add('active', 'completed');
+      });
+      if (currentSampleIncident && currentSampleIncident.incident_id) {
+        completeIncidentInvestigation(currentSampleIncident.incident_id);
+      }
+    }
     renderInvestigationStep(stepNum);
+  }
+
+  function completeIncidentInvestigation(incId) {
+    if (!incId) return Promise.resolve();
+    return fetch('/api/v1/incidents/' + encodeURIComponent(incId) + '/resolve', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (currentSampleIncident && (currentSampleIncident.incident_id === incId || incId.startsWith('INC-DEMO'))) {
+          currentSampleIncident.status = 'contained';
+          currentSampleIncident.containment_status = 'contained';
+          currentSampleIncident.remediation_status = 'remediated';
+          currentSampleIncident.recovery_status = 'verified';
+          currentSampleIncident.final_disposition = 'true_positive_malicious';
+        }
+        return fetchAndRenderAllData();
+      })
+      .catch(err => {
+        console.error('Incident resolution error:', err);
+        return fetchAndRenderAllData();
+      });
   }
 
   function renderInvestigationStep(step) {
@@ -926,20 +1011,22 @@ def render_dashboard_html(metrics: Any = None) -> str:
         <button class="btn btn-primary" onclick="setInvestigationStep(7)">Proceed to Step 7: Final Resolution &rarr;</button>
       `;
     } else if (step === 7) {
+      const incId = currentSampleIncident?.incident_id || 'INC-DEMO-001';
       box.innerHTML = `
         <h3 style="color:#FFF; margin-bottom:10px;">Step 7: Final Resolution & Incident Report</h3>
-        <p style="color:var(--text-muted); margin-bottom:16px;">Incident successfully mitigated, accounts secured, and verified clean.</p>
+        <p style="color:var(--text-muted); margin-bottom:16px;">Incident <code>${escapeHtml(incId)}</code> successfully mitigated, accounts secured, and verified clean.</p>
         <div style="background:var(--bg-card); border:1px solid var(--green); border-radius:8px; padding:16px; margin-bottom:20px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <strong style="color:var(--green);">Disposition: TRUE_POSITIVE_MALICIOUS (Contained & Remediated)</strong>
-            <span class="badge badge-success">RESOLVED</span>
+            <span class="badge badge-success">CONTAINED & REMEDIATED</span>
           </div>
           <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">All 12 structured report sections have been synthesized.</p>
         </div>
-        <div style="display:flex; gap:10px;">
-          <a href="/api/v1/reports/incident/INC-DEMO-001?format=html" target="_blank" class="btn btn-primary">📄 View Printable HTML Report</a>
-          <a href="/api/v1/reports/incident/INC-DEMO-001?format=md" target="_blank" class="btn btn-secondary">📝 Export Markdown Report</a>
-          <a href="/api/v1/reports/incident/INC-DEMO-001?format=json" target="_blank" class="btn btn-secondary">💾 Export JSON Report</a>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a href="/api/v1/reports/incident/${encodeURIComponent(incId)}?format=html" target="_blank" class="btn btn-primary">📄 View Printable HTML Report</a>
+          <a href="/api/v1/reports/incident/${encodeURIComponent(incId)}?format=md" target="_blank" class="btn btn-secondary">📝 Export Markdown Report</a>
+          <a href="/api/v1/reports/incident/${encodeURIComponent(incId)}?format=json" target="_blank" class="btn btn-secondary">💾 Export JSON Report</a>
+          <button class="btn btn-secondary" onclick="switchTab('overview')">📊 Back to Overview</button>
         </div>
       `;
     }
@@ -958,7 +1045,23 @@ def render_dashboard_html(metrics: Any = None) -> str:
     if (icon) icon.classList.add('spinning');
     if (btn) btn.disabled = true;
 
-    return fetchAndRenderAllData()
+    try {
+      localStorage.removeItem('soc_cached_metrics');
+      sessionStorage.clear();
+    } catch(e) {}
+
+    return fetch('/api/v1/reset', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        activeStep = 1;
+        switchTab('overview');
+        setInvestigationStep(1);
+        return fetchAndRenderAllData();
+      })
+      .catch(err => {
+        console.error('Reset error on refresh:', err);
+        return fetchAndRenderAllData();
+      })
       .finally(() => {
         setTimeout(() => {
           if (icon) icon.classList.remove('spinning');
@@ -968,27 +1071,7 @@ def render_dashboard_html(metrics: Any = None) -> str:
   }
 
   function resetLabToDefault(btnElement) {
-    const btn = btnElement || document.getElementById('btn-reset');
-    const origText = btn ? btn.innerText : '';
-    if (btn) {
-      btn.disabled = true;
-      btn.innerText = '🗑️ Resetting...';
-    }
-    return fetch('/api/v1/reset', { method: 'POST' })
-      .then(r => r.json())
-      .then(() => {
-        try { localStorage.removeItem('soc_cached_metrics'); } catch(e) {}
-        return fetchAndRenderAllData();
-      })
-      .catch(err => {
-        console.error('Reset error:', err);
-      })
-      .finally(() => {
-        if (btn) {
-          btn.disabled = false;
-          btn.innerText = origText || '🗑️ Reset Baseline';
-        }
-      });
+    return refreshDashboard(btnElement);
   }
 
   function triggerSimulationDemo(btnElement) {
@@ -1001,7 +1084,7 @@ def render_dashboard_html(metrics: Any = None) -> str:
     fetch('/api/v1/simulation/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ attack: true, create_incident: true })
+      body: JSON.stringify({ attack: true, create_incident: false })
     })
       .then(r => r.json())
       .then(() => {
@@ -1033,15 +1116,18 @@ def render_dashboard_html(metrics: Any = None) -> str:
             })
             .catch(() => {
               switchTab('investigate');
+              setInvestigationStep(1);
               fetchAndRenderAllData();
             });
         } else {
           switchTab('investigate');
+          setInvestigationStep(1);
           fetchAndRenderAllData();
         }
       })
       .catch(() => {
         switchTab('investigate');
+        setInvestigationStep(1);
         fetchAndRenderAllData();
       });
   }
@@ -1063,24 +1149,40 @@ def render_dashboard_html(metrics: Any = None) -> str:
         const evCount = m.total_telemetry_events ?? 0;
         const alCount = m.total_alerts ?? 0;
         const incCount = m.total_incidents ?? 0;
+        const openInc = m.open_incidents ?? 0;
+        const remInc = m.remediated_incidents ?? (m.contained_incidents ?? 0);
         const mttdStr = ((m.mttd_seconds !== undefined && m.mttd_seconds !== null) ? m.mttd_seconds : 0).toFixed(2) + 's';
         const mttrStr = ((m.mttr_seconds !== undefined && m.mttr_seconds !== null) ? m.mttr_seconds : 0).toFixed(2) + 's';
         const detRateStr = ((m.detection_rate_percent !== undefined && m.detection_rate_percent !== null) ? m.detection_rate_percent : 100).toFixed(1) + '%';
         const fpRateStr = ((m.false_positive_rate_percent !== undefined && m.false_positive_rate_percent !== null) ? m.false_positive_rate_percent : 0).toFixed(1) + '%';
         const critCount = (m.alerts_by_severity?.critical || 0) + (m.alerts_by_severity?.high || 0);
-        const openInc = m.open_incidents ?? 0;
 
-        document.getElementById('metric-events').innerText = evCount;
-        document.getElementById('metric-alerts').innerText = alCount;
-        document.getElementById('metric-incidents').innerText = incCount;
-        document.getElementById('metric-mttd').innerText = mttdStr;
-        document.getElementById('metric-mttr').innerText = mttrStr;
-        document.getElementById('metric-det-rate').innerText = detRateStr;
-        document.getElementById('metric-fp-rate').innerText = fpRateStr;
-        document.getElementById('tab-alert-count').innerText = alCount;
-        document.getElementById('tab-inc-count').innerText = incCount;
-        document.getElementById('metric-crit-alerts').innerText = critCount;
-        document.getElementById('metric-active-incidents').innerText = openInc;
+        const elEvents = document.getElementById('metric-events');
+        if (elEvents) elEvents.innerText = evCount;
+        const elAlerts = document.getElementById('metric-alerts');
+        if (elAlerts) elAlerts.innerText = alCount;
+        const elInc = document.getElementById('metric-incidents');
+        if (elInc) elInc.innerText = openInc;
+        const elActInc = document.getElementById('metric-active-incidents');
+        if (elActInc) elActInc.innerText = openInc;
+        const elRem = document.getElementById('metric-remediated');
+        if (elRem) elRem.innerText = remInc;
+        const elRemSub = document.getElementById('metric-remediated-sub');
+        if (elRemSub) elRemSub.innerText = remInc;
+        const elMttd = document.getElementById('metric-mttd');
+        if (elMttd) elMttd.innerText = mttdStr;
+        const elMttr = document.getElementById('metric-mttr');
+        if (elMttr) elMttr.innerText = mttrStr;
+        const elDet = document.getElementById('metric-det-rate');
+        if (elDet) elDet.innerText = detRateStr;
+        const elFp = document.getElementById('metric-fp-rate');
+        if (elFp) elFp.innerText = fpRateStr;
+        const elTabAlert = document.getElementById('tab-alert-count');
+        if (elTabAlert) elTabAlert.innerText = alCount;
+        const elTabInc = document.getElementById('tab-inc-count');
+        if (elTabInc) elTabInc.innerText = incCount;
+        const elCrit = document.getElementById('metric-crit-alerts');
+        if (elCrit) elCrit.innerText = critCount;
 
         try {
           localStorage.setItem('soc_cached_metrics', JSON.stringify({
@@ -1089,6 +1191,7 @@ def render_dashboard_html(metrics: Any = None) -> str:
             total_incidents: incCount,
             crit_count: critCount,
             active_incidents: openInc,
+            remediated_incidents: remInc,
             mttd: mttdStr,
             mttr: mttrStr,
             det_rate: detRateStr,
@@ -1169,12 +1272,15 @@ def render_dashboard_html(metrics: Any = None) -> str:
         if (data.incidents && data.incidents.length > 0) {
           const recRows = data.incidents.slice(0, 10).map(i => {
             const sevBadge = i.severity === 'high' || i.severity === 'critical' ? 'badge-critical' : 'badge-medium';
+            const isContained = i.containment_status === 'contained' || i.remediation_status === 'remediated' || i.status === 'contained' || i.status === 'recovered' || i.status === 'eradicated';
+            const statusBadge = isContained ? 'badge-success' : 'badge-info';
+            const statusLabel = isContained ? 'CONTAINED' : escapeHtml((i.status || 'new').toUpperCase());
             return `
               <tr>
                 <td><code>${escapeHtml(i.incident_id)}</code></td>
                 <td><span class="badge ${sevBadge}">${escapeHtml(i.severity.toUpperCase())}</span></td>
                 <td><strong>${escapeHtml(i.title)}</strong></td>
-                <td><span class="badge badge-info">${escapeHtml(i.status.toUpperCase())}</span></td>
+                <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
               </tr>
             `;
           }).join('');
@@ -1182,11 +1288,14 @@ def render_dashboard_html(metrics: Any = None) -> str:
 
           const allRows = data.incidents.map(i => {
             const sevBadge = i.severity === 'high' || i.severity === 'critical' ? 'badge-critical' : 'badge-medium';
+            const isContained = i.containment_status === 'contained' || i.remediation_status === 'remediated' || i.status === 'contained' || i.status === 'recovered' || i.status === 'eradicated';
+            const statusBadge = isContained ? 'badge-success' : 'badge-info';
+            const statusLabel = isContained ? 'CONTAINED' : escapeHtml((i.status || 'new').toUpperCase());
             return `
               <tr>
                 <td><code>${escapeHtml(i.incident_id)}</code></td>
                 <td><span class="badge ${sevBadge}">${escapeHtml(i.severity.toUpperCase())}</span></td>
-                <td><span class="badge badge-info">${escapeHtml(i.status.toUpperCase())}</span></td>
+                <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
                 <td><strong>${escapeHtml(i.title)}</strong></td>
                 <td><span class="badge ${i.containment_status === 'contained' ? 'badge-success' : 'badge-low'}">${escapeHtml((i.containment_status || 'uncontained').toUpperCase())}</span></td>
                 <td><span class="badge ${i.remediation_status === 'remediated' ? 'badge-success' : 'badge-low'}">${escapeHtml((i.remediation_status || 'pending').toUpperCase())}</span></td>
@@ -1281,7 +1390,11 @@ def render_dashboard_html(metrics: Any = None) -> str:
       const elAlerts = document.getElementById('metric-alerts');
       if (elAlerts) elAlerts.innerText = cached.total_alerts;
       const elInc = document.getElementById('metric-incidents');
-      if (elInc) elInc.innerText = cached.total_incidents;
+      if (elInc) elInc.innerText = cached.active_incidents ?? (cached.total_incidents ?? 0);
+      const elRem = document.getElementById('metric-remediated');
+      if (elRem) elRem.innerText = cached.remediated_incidents ?? 0;
+      const elRemSub = document.getElementById('metric-remediated-sub');
+      if (elRemSub) elRemSub.innerText = cached.remediated_incidents ?? 0;
       const elMttd = document.getElementById('metric-mttd');
       if (elMttd) elMttd.innerText = cached.mttd;
       const elMttr = document.getElementById('metric-mttr');
@@ -1303,8 +1416,23 @@ def render_dashboard_html(metrics: Any = None) -> str:
 
   // Initial load
   document.addEventListener('DOMContentLoaded', () => {
-    fetchAndRenderAllData();
-    renderInvestigationStep(1);
+    const navEntries = (window.performance && window.performance.getEntriesByType) ? window.performance.getEntriesByType('navigation') : [];
+    const isReload = (navEntries.length > 0 && navEntries[0].type === 'reload') || (window.performance && window.performance.navigation && window.performance.navigation.type === 1);
+    
+    if (isReload) {
+      try {
+        localStorage.removeItem('soc_cached_metrics');
+        sessionStorage.clear();
+      } catch(e) {}
+      fetch('/api/v1/reset', { method: 'POST' })
+        .finally(() => {
+          fetchAndRenderAllData();
+          renderInvestigationStep(1);
+        });
+    } else {
+      fetchAndRenderAllData();
+      renderInvestigationStep(1);
+    }
   });
 </script>
 </body>
@@ -1317,6 +1445,7 @@ def render_dashboard_html(metrics: Any = None) -> str:
         .replace('__INITIAL_INCIDENTS__', incidents_cnt)
         .replace('__INITIAL_CRIT_ALERTS__', crit_cnt)
         .replace('__INITIAL_OPEN_INC__', open_inc_cnt)
+        .replace('__INITIAL_REMEDIATED__', remediated_cnt)
         .replace('__INITIAL_MTTD__', mttd_val)
         .replace('__INITIAL_MTTR__', mttr_val)
         .replace('__INITIAL_DET_RATE__', det_rate_val)
