@@ -179,7 +179,14 @@ class DeepHealthChecker:
         t0 = time.perf_counter()
         u_cnt = len(self.ad_server.users)
         g_cnt = len(self.ad_server.groups)
-        auth_ok = self.ad_server.authenticate_user("jdoe", "LabPassword123!")
+        probe_ad = ActiveDirectoryServer(
+            domain_name=self.ad_server.domain_name,
+            netbios_name=self.ad_server.netbios_name,
+            dc_hostname=self.ad_server.dc_hostname,
+            dc_ip=self.ad_server.dc_ip,
+            siem_collector=None,
+        )
+        auth_ok = probe_ad.authenticate_user("jdoe", "LabPassword123!")
         dur = round((time.perf_counter() - t0) * 1000, 2)
 
         if not auth_ok or u_cnt < 5:
@@ -206,8 +213,12 @@ class DeepHealthChecker:
     def check_linux_infrastructure(self) -> ComponentHealth:
         """Verify Linux server SSH and audit logging pipeline."""
         t0 = time.perf_counter()
-        ssh_ok = self.linux_service.simulate_ssh_login("sysadmin", "LinuxAdminLab2026!")
-        exec_ok = self.linux_service.simulate_command_execution("sysadmin", "whoami")
+        probe_linux = LinuxServerService(
+            config=self.linux_service.config,
+            siem_collector=None,
+        )
+        ssh_ok = probe_linux.simulate_ssh_login("sysadmin", "LinuxAdminLab2026!")
+        exec_ok = probe_linux.simulate_command_execution("sysadmin", "whoami")
         dur = round((time.perf_counter() - t0) * 1000, 2)
 
         if not ssh_ok or not exec_ok.get("logged"):
@@ -232,6 +243,8 @@ class DeepHealthChecker:
     def check_siem_collector(self) -> ComponentHealth:
         """Verify SIEM telemetry ingestion and event store."""
         t0 = time.perf_counter()
+        probe_store = EventStore(max_capacity=10)
+        probe_collector = SIEMCollector(store=probe_store)
         test_ev = ECSEvent(
             event=EventMetadata(
                 category=EventCategory.SYSTEM,
@@ -240,10 +253,10 @@ class DeepHealthChecker:
             ),
             message="Health probe event",
         )
-        ev_id = self.siem_collector.ingest_event(test_ev)
+        ev_id = probe_collector.ingest_event(test_ev)
         dur = round((time.perf_counter() - t0) * 1000, 2)
 
-        if not ev_id:
+        if not ev_id or self.event_store is None:
             return ComponentHealth(
                 name="SIEM Collector",
                 status=HealthStatus.UNHEALTHY,
