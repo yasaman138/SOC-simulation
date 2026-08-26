@@ -141,3 +141,63 @@ def test_incident_investigation_and_reporting_workflow():
     audit_resp = client.get("/api/v1/audit")
     assert audit_resp.status_code == 200
     assert audit_resp.json()["total_matching"] >= 1
+
+
+def test_simulation_run_api_endpoint():
+    """Verify POST /api/v1/simulation/run executes attack scenarios and populates stores."""
+    event_store = EventStore()
+    alert_store = AlertStore()
+    inc_store = IncidentStore()
+    app = create_siem_app(store=event_store, alerts=alert_store, incidents=inc_store)
+    client = TestClient(app)
+
+    # Initial baseline
+    assert event_store.count() == 0
+    assert alert_store.count() == 0
+
+    # Run specific attack scenario
+    resp = client.post(
+        "/api/v1/simulation/run",
+        json={"scenario": "SCN-CRED-004", "attack": True, "create_incident": True},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["scenarios_executed"] == 1
+    assert data["total_telemetry_events"] > 0
+    assert data["total_alerts"] > 0
+    assert data["total_incidents"] > 0
+    assert event_store.count() > 0
+    assert alert_store.count() > 0
+
+
+def test_simulation_scenarios_list_api_endpoint():
+    """Verify GET /api/v1/simulation/scenarios lists registered scenarios."""
+    app = create_siem_app()
+    client = TestClient(app)
+
+    resp = client.get("/api/v1/simulation/scenarios")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_scenarios"] >= 10
+    assert len(data["scenarios"]) >= 10
+
+
+def test_deep_health_does_not_pollute_event_store():
+    """Verify calling /api/v1/health/deep repeatedly does not inflate event store counts."""
+    event_store = EventStore()
+    alert_store = AlertStore()
+    app = create_siem_app(store=event_store, alerts=alert_store)
+    client = TestClient(app)
+
+    baseline_events = event_store.count()
+    assert baseline_events == 0
+
+    # Call health check multiple times
+    for _ in range(5):
+        resp = client.get("/api/v1/health/deep")
+        assert resp.status_code == 200
+        assert resp.json()["overall_status"] == "healthy"
+
+    # Event count must remain zero (no pollution)
+    assert event_store.count() == 0
