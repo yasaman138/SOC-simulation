@@ -5,9 +5,21 @@ and REST endpoints for SOC monitoring, alert triage, incident response,
 timeline visualization, MITRE ATT&CK coverage, and structured reporting.
 """
 
-def render_dashboard_html() -> str:
+from typing import Any, Optional
+
+def render_dashboard_html(metrics: Any = None) -> str:
     """Render the single-page application SOC Web Dashboard HTML."""
-    return """<!DOCTYPE html>
+    events_cnt = str(getattr(metrics, "total_telemetry_events", 0) if metrics else 0)
+    alerts_cnt = str(getattr(metrics, "total_alerts", 0) if metrics else 0)
+    incidents_cnt = str(getattr(metrics, "total_incidents", 0) if metrics else 0)
+    crit_cnt = str((metrics.alerts_by_severity.get("critical", 0) + metrics.alerts_by_severity.get("high", 0)) if (metrics and hasattr(metrics, "alerts_by_severity") and isinstance(metrics.alerts_by_severity, dict)) else 0)
+    open_inc_cnt = str(getattr(metrics, "open_incidents", 0) if metrics else 0)
+    mttd_val = f"{getattr(metrics, 'mttd_seconds', 0.0):.2f}s" if metrics else "0.00s"
+    mttr_val = f"{getattr(metrics, 'mttr_seconds', 0.0):.2f}s" if metrics else "0.00s"
+    det_rate_val = f"{getattr(metrics, 'detection_rate_percent', 100.0):.1f}%" if metrics else "100.0%"
+    fp_rate_val = f"{getattr(metrics, 'false_positive_rate_percent', 0.0):.1f}%" if metrics else "0.0%"
+
+    html = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -456,6 +468,14 @@ def render_dashboard_html() -> str:
   /* Hidden Tab Content */
   .tab-content { display: none; }
   .tab-content.active { display: block; }
+
+  .spinning {
+    display: inline-block;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    100% { transform: rotate(360deg); }
+  }
 </style>
 </head>
 <body>
@@ -473,15 +493,16 @@ def render_dashboard_html() -> str:
       <div class="pulse-dot"></div>
       <span>SYSTEM HEALTHY</span>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="triggerSimulationDemo(this)">⚡ Run Attack Simulation</button>
-    <button class="btn btn-secondary btn-sm" onclick="fetchAndRenderAllData()">🔄 Refresh</button>
+    <button id="btn-run-sim-hdr" class="btn btn-primary btn-sm" onclick="triggerSimulationDemo(this)">⚡ Run Attack Simulation</button>
+    <button id="btn-refresh" class="btn btn-secondary btn-sm" onclick="refreshDashboard(this)"><span class="refresh-icon">🔄</span> Refresh</button>
+    <button id="btn-reset" class="btn btn-secondary btn-sm" onclick="resetLabToDefault(this)">🗑️ Reset Baseline</button>
   </div>
 </header>
 
 <div class="nav-tabs">
   <div class="nav-tab active" onclick="switchTab('overview')">📊 Overview</div>
-  <div class="nav-tab" onclick="switchTab('alerts')">🚨 Security Alerts (<span id="tab-alert-count">0</span>)</div>
-  <div class="nav-tab" onclick="switchTab('incidents')">🛡️ Incident Workbench (<span id="tab-inc-count">0</span>)</div>
+  <div class="nav-tab" onclick="switchTab('alerts')">🚨 Security Alerts (<span id="tab-alert-count">__INITIAL_ALERTS__</span>)</div>
+  <div class="nav-tab" onclick="switchTab('incidents')">🛡️ Incident Workbench (<span id="tab-inc-count">__INITIAL_INCIDENTS__</span>)</div>
   <div class="nav-tab" onclick="switchTab('investigate')">🔍 Investigation UX Flow</div>
   <div class="nav-tab" onclick="switchTab('mitre')">🎯 MITRE ATT&CK Matrix</div>
   <div class="nav-tab" onclick="switchTab('audit')">📜 SOAR Audit Trail</div>
@@ -494,37 +515,37 @@ def render_dashboard_html() -> str:
   <div class="stats-grid">
     <div class="stat-card accent-cyan">
       <div class="stat-label">Telemetry Events</div>
-      <div class="stat-value" id="metric-events">0</div>
+      <div class="stat-value" id="metric-events">__INITIAL_EVENTS__</div>
       <div class="stat-sub">Normalized ECS Storage</div>
     </div>
     <div class="stat-card accent-red">
       <div class="stat-label">Active Alerts</div>
-      <div class="stat-value" id="metric-alerts">0</div>
-      <div class="stat-sub"><span id="metric-crit-alerts">0</span> Critical / High</div>
+      <div class="stat-value" id="metric-alerts">__INITIAL_ALERTS__</div>
+      <div class="stat-sub"><span id="metric-crit-alerts">__INITIAL_CRIT_ALERTS__</span> Critical / High</div>
     </div>
     <div class="stat-card accent-amber">
       <div class="stat-label">Open Incidents</div>
-      <div class="stat-value" id="metric-incidents">0</div>
-      <div class="stat-sub"><span id="metric-active-incidents">0</span> In Triage/Investigation</div>
+      <div class="stat-value" id="metric-incidents">__INITIAL_INCIDENTS__</div>
+      <div class="stat-sub"><span id="metric-active-incidents">__INITIAL_OPEN_INC__</span> In Triage/Investigation</div>
     </div>
     <div class="stat-card accent-indigo">
       <div class="stat-label">Mean Time To Detect (MTTD)</div>
-      <div class="stat-value" id="metric-mttd">0.00s</div>
+      <div class="stat-value" id="metric-mttd">__INITIAL_MTTD__</div>
       <div class="stat-sub">Telemetry to Alert Latency</div>
     </div>
     <div class="stat-card accent-indigo">
       <div class="stat-label">Mean Time To Respond (MTTR)</div>
-      <div class="stat-value" id="metric-mttr">0.00s</div>
+      <div class="stat-value" id="metric-mttr">__INITIAL_MTTR__</div>
       <div class="stat-sub">Alert to Containment Latency</div>
     </div>
     <div class="stat-card accent-green">
       <div class="stat-label">Detection Rate</div>
-      <div class="stat-value" id="metric-det-rate">100.0%</div>
+      <div class="stat-value" id="metric-det-rate">__INITIAL_DET_RATE__</div>
       <div class="stat-sub">24/24 Attack Scenarios</div>
     </div>
     <div class="stat-card accent-green">
       <div class="stat-label">False Positive Rate</div>
-      <div class="stat-value" id="metric-fp-rate">0.0%</div>
+      <div class="stat-value" id="metric-fp-rate">__INITIAL_FP_RATE__</div>
       <div class="stat-sub">6/6 Benign Controls Clean</div>
     </div>
   </div>
@@ -931,6 +952,45 @@ def render_dashboard_html() -> str:
     fetchAndRenderAllData();
   }
 
+  function refreshDashboard(btnElement) {
+    const btn = btnElement || document.getElementById('btn-refresh');
+    const icon = btn ? btn.querySelector('.refresh-icon') : null;
+    if (icon) icon.classList.add('spinning');
+    if (btn) btn.disabled = true;
+
+    return fetchAndRenderAllData()
+      .finally(() => {
+        setTimeout(() => {
+          if (icon) icon.classList.remove('spinning');
+          if (btn) btn.disabled = false;
+        }, 300);
+      });
+  }
+
+  function resetLabToDefault(btnElement) {
+    const btn = btnElement || document.getElementById('btn-reset');
+    const origText = btn ? btn.innerText : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '🗑️ Resetting...';
+    }
+    return fetch('/api/v1/reset', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        try { localStorage.removeItem('soc_cached_metrics'); } catch(e) {}
+        return fetchAndRenderAllData();
+      })
+      .catch(err => {
+        console.error('Reset error:', err);
+      })
+      .finally(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = origText || '🗑️ Reset Baseline';
+        }
+      });
+  }
+
   function triggerSimulationDemo(btnElement) {
     const btn = btnElement || document.querySelector('#tab-alerts .btn-primary');
     const origText = btn ? btn.innerHTML : '';
@@ -945,7 +1005,7 @@ def render_dashboard_html() -> str:
     })
       .then(r => r.json())
       .then(() => {
-        fetchAndRenderAllData();
+        return fetchAndRenderAllData();
       })
       .catch(err => {
         console.error('Simulation error:', err);
@@ -997,22 +1057,44 @@ def render_dashboard_html() -> str:
 
   function fetchAndRenderAllData() {
     // 1. Fetch metrics
-    fetch('/api/v1/metrics/soc')
+    const p1 = fetch('/api/v1/metrics/soc')
       .then(r => r.json())
       .then(m => {
-        document.getElementById('metric-events').innerText = m.total_telemetry_events ?? 0;
-        document.getElementById('metric-alerts').innerText = m.total_alerts ?? 0;
-        document.getElementById('metric-incidents').innerText = m.total_incidents ?? 0;
-        document.getElementById('metric-mttd').innerText = ((m.mttd_seconds !== undefined && m.mttd_seconds !== null) ? m.mttd_seconds : 0).toFixed(2) + 's';
-        document.getElementById('metric-mttr').innerText = ((m.mttr_seconds !== undefined && m.mttr_seconds !== null) ? m.mttr_seconds : 0).toFixed(2) + 's';
-        document.getElementById('metric-det-rate').innerText = ((m.detection_rate_percent !== undefined && m.detection_rate_percent !== null) ? m.detection_rate_percent : 100).toFixed(1) + '%';
-        document.getElementById('metric-fp-rate').innerText = ((m.false_positive_rate_percent !== undefined && m.false_positive_rate_percent !== null) ? m.false_positive_rate_percent : 0).toFixed(1) + '%';
-        document.getElementById('tab-alert-count').innerText = m.total_alerts ?? 0;
-        document.getElementById('tab-inc-count').innerText = m.total_incidents ?? 0;
-
+        const evCount = m.total_telemetry_events ?? 0;
+        const alCount = m.total_alerts ?? 0;
+        const incCount = m.total_incidents ?? 0;
+        const mttdStr = ((m.mttd_seconds !== undefined && m.mttd_seconds !== null) ? m.mttd_seconds : 0).toFixed(2) + 's';
+        const mttrStr = ((m.mttr_seconds !== undefined && m.mttr_seconds !== null) ? m.mttr_seconds : 0).toFixed(2) + 's';
+        const detRateStr = ((m.detection_rate_percent !== undefined && m.detection_rate_percent !== null) ? m.detection_rate_percent : 100).toFixed(1) + '%';
+        const fpRateStr = ((m.false_positive_rate_percent !== undefined && m.false_positive_rate_percent !== null) ? m.false_positive_rate_percent : 0).toFixed(1) + '%';
         const critCount = (m.alerts_by_severity?.critical || 0) + (m.alerts_by_severity?.high || 0);
+        const openInc = m.open_incidents ?? 0;
+
+        document.getElementById('metric-events').innerText = evCount;
+        document.getElementById('metric-alerts').innerText = alCount;
+        document.getElementById('metric-incidents').innerText = incCount;
+        document.getElementById('metric-mttd').innerText = mttdStr;
+        document.getElementById('metric-mttr').innerText = mttrStr;
+        document.getElementById('metric-det-rate').innerText = detRateStr;
+        document.getElementById('metric-fp-rate').innerText = fpRateStr;
+        document.getElementById('tab-alert-count').innerText = alCount;
+        document.getElementById('tab-inc-count').innerText = incCount;
         document.getElementById('metric-crit-alerts').innerText = critCount;
-        document.getElementById('metric-active-incidents').innerText = m.open_incidents ?? 0;
+        document.getElementById('metric-active-incidents').innerText = openInc;
+
+        try {
+          localStorage.setItem('soc_cached_metrics', JSON.stringify({
+            total_telemetry_events: evCount,
+            total_alerts: alCount,
+            total_incidents: incCount,
+            crit_count: critCount,
+            active_incidents: openInc,
+            mttd: mttdStr,
+            mttr: mttrStr,
+            det_rate: detRateStr,
+            fp_rate: fpRateStr
+          }));
+        } catch(e) {}
 
         // Render tactics heat grid
         const tacticsBox = document.getElementById('tactics-container');
@@ -1036,7 +1118,7 @@ def render_dashboard_html() -> str:
       .catch(() => {});
 
     // 2. Fetch alerts
-    fetch('/api/v1/alerts?limit=50')
+    const p2 = fetch('/api/v1/alerts?limit=50')
       .then(r => r.json())
       .then(data => {
         const table = document.getElementById('recent-alerts-table');
@@ -1079,7 +1161,7 @@ def render_dashboard_html() -> str:
       .catch(() => {});
 
     // 3. Fetch incidents
-    fetch('/api/v1/incidents?limit=50')
+    const p3 = fetch('/api/v1/incidents?limit=50')
       .then(r => r.json())
       .then(data => {
         const recTable = document.getElementById('recent-incidents-table');
@@ -1123,7 +1205,7 @@ def render_dashboard_html() -> str:
       .catch(() => {});
 
     // 4. Fetch SOAR audit log
-    fetch('/api/v1/audit?limit=20')
+    const p4 = fetch('/api/v1/audit?limit=20')
       .then(r => r.json())
       .then(data => {
         const auditTable = document.getElementById('audit-log-table');
@@ -1148,7 +1230,7 @@ def render_dashboard_html() -> str:
       .catch(() => {});
 
     // 5. Fetch detections for MITRE table
-    fetch('/api/v1/detections')
+    const p5 = fetch('/api/v1/detections')
       .then(r => r.json())
       .then(data => {
         const table = document.getElementById('mitre-rules-table');
@@ -1169,7 +1251,7 @@ def render_dashboard_html() -> str:
       .catch(() => {});
 
     // 6. Fetch health status
-    fetch('/api/v1/health/deep')
+    const p6 = fetch('/api/v1/health/deep')
       .then(r => r.json())
       .then(data => {
         const grid = document.getElementById('health-components-grid');
@@ -1186,7 +1268,38 @@ def render_dashboard_html() -> str:
         }
       })
       .catch(() => {});
+
+    return Promise.allSettled([p1, p2, p3, p4, p5, p6]);
   }
+
+  // Instant cache hydration to prevent visual flash on page reload
+  try {
+    const cached = JSON.parse(localStorage.getItem('soc_cached_metrics') || '{}');
+    if (cached.total_telemetry_events !== undefined) {
+      const elEvents = document.getElementById('metric-events');
+      if (elEvents) elEvents.innerText = cached.total_telemetry_events;
+      const elAlerts = document.getElementById('metric-alerts');
+      if (elAlerts) elAlerts.innerText = cached.total_alerts;
+      const elInc = document.getElementById('metric-incidents');
+      if (elInc) elInc.innerText = cached.total_incidents;
+      const elMttd = document.getElementById('metric-mttd');
+      if (elMttd) elMttd.innerText = cached.mttd;
+      const elMttr = document.getElementById('metric-mttr');
+      if (elMttr) elMttr.innerText = cached.mttr;
+      const elDet = document.getElementById('metric-det-rate');
+      if (elDet) elDet.innerText = cached.det_rate;
+      const elFp = document.getElementById('metric-fp-rate');
+      if (elFp) elFp.innerText = cached.fp_rate;
+      const elTabAlert = document.getElementById('tab-alert-count');
+      if (elTabAlert) elTabAlert.innerText = cached.total_alerts;
+      const elTabInc = document.getElementById('tab-inc-count');
+      if (elTabInc) elTabInc.innerText = cached.total_incidents;
+      const elCrit = document.getElementById('metric-crit-alerts');
+      if (elCrit) elCrit.innerText = cached.crit_count ?? 0;
+      const elActInc = document.getElementById('metric-active-incidents');
+      if (elActInc) elActInc.innerText = cached.active_incidents ?? 0;
+    }
+  } catch(e) {}
 
   // Initial load
   document.addEventListener('DOMContentLoaded', () => {
@@ -1197,3 +1310,16 @@ def render_dashboard_html() -> str:
 </body>
 </html>
 """
+    return (
+        html
+        .replace('__INITIAL_EVENTS__', events_cnt)
+        .replace('__INITIAL_ALERTS__', alerts_cnt)
+        .replace('__INITIAL_INCIDENTS__', incidents_cnt)
+        .replace('__INITIAL_CRIT_ALERTS__', crit_cnt)
+        .replace('__INITIAL_OPEN_INC__', open_inc_cnt)
+        .replace('__INITIAL_MTTD__', mttd_val)
+        .replace('__INITIAL_MTTR__', mttr_val)
+        .replace('__INITIAL_DET_RATE__', det_rate_val)
+        .replace('__INITIAL_FP_RATE__', fp_rate_val)
+    )
+
