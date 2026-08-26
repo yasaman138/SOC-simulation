@@ -256,3 +256,99 @@ def test_dashboard_renders_live_metrics_without_flicker():
     assert f'id="metric-events">{ev_count}</div>' in html
     assert 'id="metric-events">__INITIAL_EVENTS__' not in html
 
+
+def test_dashboard_html_remediated_metric_card_and_active_nav_tabs():
+    """Verify Remediated Incidents box and active nav tabs CSS/data-attributes are present in dashboard HTML."""
+    app = create_siem_app()
+    client = TestClient(app)
+
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Verify Remediated / Contained stat box is rendered
+    assert 'id="metric-remediated"' in html
+    assert 'Remediated / Contained' in html
+
+    # Verify data-tab attributes and tab active styles
+    assert 'data-tab="overview"' in html
+    assert 'data-tab="alerts"' in html
+    assert 'data-tab="incidents"' in html
+    assert 'data-tab="investigate"' in html
+    assert 'tab-overview-active' in html
+    assert 'tab-alerts-active' in html
+    assert 'tab-incidents-active' in html
+    assert 'tab-investigate-active' in html
+
+
+def test_incident_resolution_flow_updates_metrics():
+    """Verify investigation creation, resolve endpoint, and dynamic metric adjustments."""
+    event_store = EventStore()
+    alert_store = AlertStore()
+    inc_store = IncidentStore()
+    app = create_siem_app(store=event_store, alerts=alert_store, incidents=inc_store)
+    client = TestClient(app)
+
+    # 1. Add alert
+    alt = Alert(
+        id="ALT-RESOLVE-01",
+        rule_id="RULE-AUTH-001",
+        rule_name="Brute Force",
+        title="Multiple Auth Failures",
+        description="Threshold exceeded",
+        severity=EventSeverity.HIGH,
+    )
+    alert_store.add_alert(alt)
+
+    # 2. Investigate alert
+    inv_resp = client.post("/api/v1/incidents/investigate/ALT-RESOLVE-01")
+    assert inv_resp.status_code == 200
+    inc_id = inv_resp.json()["incident_id"]
+
+    # Metric check: Open incident = 1, Remediated = 0
+    m1 = client.get("/api/v1/metrics/soc").json()
+    assert m1["open_incidents"] == 1
+    assert m1["remediated_incidents"] == 0
+
+    # 3. Resolve incident upon 7-step investigation completion
+    res_resp = client.post(f"/api/v1/incidents/{inc_id}/resolve")
+    assert res_resp.status_code == 200
+    res_data = res_resp.json()
+    assert res_data["status"] == "success"
+    assert res_data["containment_status"] == "contained"
+    assert res_data["remediation_status"] == "remediated"
+
+    # Metric check: Open incident drops to 0, Remediated increments to 1
+    m2 = client.get("/api/v1/metrics/soc").json()
+    assert m2["open_incidents"] == 0
+    assert m2["remediated_incidents"] == 1
+
+
+def test_investigate_endpoint_reuses_existing_incident():
+    """Verify investigate endpoint returns existing incident without creating duplicates."""
+    alert_store = AlertStore()
+    inc_store = IncidentStore()
+    app = create_siem_app(alerts=alert_store, incidents=inc_store)
+    client = TestClient(app)
+
+    alt = Alert(
+        id="ALT-DEDUP-01",
+        rule_id="RULE-AUTH-001",
+        rule_name="Brute Force",
+        title="Multiple Auth Failures",
+        description="Threshold exceeded",
+        severity=EventSeverity.HIGH,
+    )
+    alert_store.add_alert(alt)
+
+    resp1 = client.post("/api/v1/incidents/investigate/ALT-DEDUP-01")
+    assert resp1.status_code == 200
+    inc_id_1 = resp1.json()["incident_id"]
+
+    resp2 = client.post("/api/v1/incidents/investigate/ALT-DEDUP-01")
+    assert resp2.status_code == 200
+    inc_id_2 = resp2.json()["incident_id"]
+
+    assert inc_id_1 == inc_id_2
+    assert inc_store.count() == 1
+
