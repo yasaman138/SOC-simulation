@@ -179,3 +179,39 @@ def test_technique_coverage_matrix():
     assert t1110.tactic == "Credential Access"
     assert t1110.rules_count >= 1
     assert t1110.has_simulation is True
+
+
+def test_remediated_and_open_incidents_calculation():
+    """Verify open and remediated/contained incident counts are correctly distinguished."""
+    from src.response.models import ContainmentStatus, RemediationStatus
+
+    inc_store = IncidentStore()
+    calc = SOCMetricsCalculator(incident_store=inc_store)
+
+    # 1. New/investigating incident (open)
+    inc_open = Incident(
+        incident_id="INC-TEST-001",
+        title="Active Investigation",
+        description="Under triage",
+        status=IncidentStatus.INVESTIGATING,
+        severity=IncidentSeverity.HIGH,
+    )
+    inc_store.add_incident(inc_open)
+
+    # 2. Contained and remediated incident
+    inc_contained = Incident(
+        incident_id="INC-TEST-002",
+        title="Remediated Threat",
+        description="Contained and remediated",
+        status=IncidentStatus.CONTAINED,
+        containment_status=ContainmentStatus.CONTAINED,
+        remediation_status=RemediationStatus.REMEDIATED,
+        severity=IncidentSeverity.CRITICAL,
+    )
+    inc_store.add_incident(inc_contained)
+
+    summary = calc.calculate_metrics()
+    assert summary.total_incidents == 2
+    assert summary.open_incidents == 1
+    assert summary.contained_incidents == 1
+    assert summary.remediated_incidents == 1
