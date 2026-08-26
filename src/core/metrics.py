@@ -12,7 +12,12 @@ from src.core.logging import get_logger
 from src.detection.models import Alert, MitreTactic
 from src.detection.rules import get_default_rules
 from src.detection.storage import AlertStore
-from src.response.models import Incident, IncidentStatus
+from src.response.models import (
+    ContainmentStatus,
+    Incident,
+    IncidentStatus,
+    RemediationStatus,
+)
 from src.response.storage import AuditStore, IncidentStore
 from src.siem.storage import EventStore
 from src.simulation.models import CoverageReport, ValidationResult
@@ -49,6 +54,7 @@ class SOCMetricsSummary(BaseModel):
     open_incidents: int = 0
     contained_incidents: int = 0
     resolved_incidents: int = 0
+    remediated_incidents: int = 0
     total_response_actions: int = 0
 
     # Detection & Simulation Performance
@@ -148,12 +154,21 @@ class SOCMetricsCalculator:
             st_val = inc.status.value
             incidents_by_stat[st_val] = incidents_by_stat.get(st_val, 0) + 1
 
-            if inc.status in (IncidentStatus.NEW, IncidentStatus.TRIAGED, IncidentStatus.INVESTIGATING):
-                open_cnt += 1
-            elif inc.status == IncidentStatus.CONTAINED:
+            is_contained_or_remediated = (
+                inc.status in (IncidentStatus.CONTAINED, IncidentStatus.ERADICATED, IncidentStatus.RECOVERED, IncidentStatus.CLOSED)
+                or getattr(inc, "containment_status", None) == ContainmentStatus.CONTAINED
+                or getattr(inc, "remediation_status", None) == RemediationStatus.REMEDIATED
+            )
+
+            if is_contained_or_remediated:
                 contained_cnt += 1
-            elif inc.status in (IncidentStatus.ERADICATED, IncidentStatus.RECOVERED, IncidentStatus.CLOSED):
-                resolved_cnt += 1
+                if (
+                    inc.status in (IncidentStatus.ERADICATED, IncidentStatus.RECOVERED, IncidentStatus.CLOSED)
+                    or getattr(inc, "remediation_status", None) == RemediationStatus.REMEDIATED
+                ):
+                    resolved_cnt += 1
+            elif inc.status in (IncidentStatus.NEW, IncidentStatus.TRIAGED, IncidentStatus.INVESTIGATING):
+                open_cnt += 1
 
         # Calculate Mean Time To Detect (MTTD)
         mttd_list: List[float] = []
@@ -280,6 +295,7 @@ class SOCMetricsCalculator:
             open_incidents=open_cnt,
             contained_incidents=contained_cnt,
             resolved_incidents=resolved_cnt,
+            remediated_incidents=contained_cnt,
             total_response_actions=len(audit_entries),
             total_attack_scenarios=total_attacks,
             detected_attack_scenarios=detected_attacks,
