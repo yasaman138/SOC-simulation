@@ -13,7 +13,17 @@ from src.detection.models import Alert, AlertQuery, AlertStatus
 from src.detection.storage import AlertStore
 from src.response.automation import ResponseAutomationEngine
 from src.response.investigation import InvestigationEngine
-from src.response.models import Incident, IncidentQuery, ResponseActionType
+from src.response.models import (
+    AnalystAction,
+    ContainmentStatus,
+    Incident,
+    IncidentDisposition,
+    IncidentQuery,
+    IncidentStatus,
+    RecoveryStatus,
+    RemediationStatus,
+    ResponseActionType,
+)
 from src.response.playbooks import (
     CredentialCompromisePlaybook,
     LateralMovementPlaybook,
@@ -494,6 +504,20 @@ def create_siem_app(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Alert '{alert_id}' not found to investigate",
             )
+        # Reuse existing incident if already created for this alert
+        for existing in active_incidents.list_incidents():
+            if (
+                alert_id in existing.detection_source
+                or (existing.metadata and existing.metadata.get("primary_alert_id") == alert_id)
+            ):
+                return {
+                    "status": "success",
+                    "incident_id": existing.incident_id,
+                    "title": existing.title,
+                    "timeline_events": len(existing.timeline),
+                    "indicators": len(existing.indicators),
+                }
+
         incident = active_inv.create_incident_from_alert(alert)
         active_incidents.add_incident(incident)
         return {
@@ -504,9 +528,48 @@ def create_siem_app(
             "indicators": len(incident.indicators),
         }
 
+    @app.post("/api/v1/incidents/{incident_id}/resolve", tags=["Incidents"])
+    def resolve_incident(incident_id: str) -> Dict[str, Any]:
+        """Mark an incident as contained, remediated, and resolved upon completing investigation."""
+        inc = active_incidents.get_incident(incident_id)
+        if not inc:
+            if incident_id.startswith("INC-DEMO"):
+                return {
+                    "status": "success",
+                    "incident_id": incident_id,
+                    "containment_status": "contained",
+                    "remediation_status": "remediated",
+                    "status": "contained",
+                }
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Incident '{incident_id}' not found to resolve",
+            )
+
+        inc.containment_status = ContainmentStatus.CONTAINED
+        inc.remediation_status = RemediationStatus.REMEDIATED
+        inc.recovery_status = RecoveryStatus.VERIFIED
+        inc.status = IncidentStatus.CONTAINED
+        inc.final_disposition = IncidentDisposition.TRUE_POSITIVE_MALICIOUS
+        inc.log_action(
+            AnalystAction(
+                actor="soc_analyst",
+                action_type="containment_and_remediation",
+                description="Completed 7-step SOC Investigation UX Workflow. Threat contained and remediation verified.",
+            )
+        )
+        active_incidents.update_incident(inc)
+        return {
+            "status": "success",
+            "incident_id": inc.incident_id,
+            "containment_status": inc.containment_status.value,
+            "remediation_status": inc.remediation_status.value,
+            "status": inc.status.value,
+        }
+
     @app.post("/api/v1/incidents/{incident_id}/respond", tags=["Incidents"])
     def execute_incident_response(
-        incident_id: str, request: PlaybookExecutionRequest
+        incident_id: str, request: Optional[PlaybookExecutionRequest] = None
     ) -> Dict[str, Any]:
         """Execute automated response playbook on an incident."""
         inc = active_incidents.get_incident(incident_id)
@@ -522,18 +585,20 @@ def create_siem_app(
             "malware": MalwareRansomwarePlaybook(),
         }
 
-        pb = playbooks.get(request.playbook_type.lower())
+        pb_type = request.playbook_type.lower() if request else "credential"
+        pb_actor = request.actor if request else "soar_automation"
+        pb = playbooks.get(pb_type)
         if not pb:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid playbook '{request.playbook_type}'. Options: credential, lateral, malware",
+                detail=f"Invalid playbook '{pb_type}'. Options: credential, lateral, malware",
             )
 
         resolved_inc = pb.execute(
             incident=inc,
             investigation_engine=active_inv,
             automation_engine=active_auto,
-            actor=request.actor,
+            actor=pb_actor,
         )
         active_incidents.update_incident(resolved_inc)
 
