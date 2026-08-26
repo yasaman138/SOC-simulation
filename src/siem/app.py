@@ -138,7 +138,8 @@ def create_siem_app(
     @app.get("/dashboard", response_class=HTMLResponse, tags=["Dashboard"])
     def get_dashboard() -> str:
         """Render interactive SOC Analyst Web Dashboard and Investigation Workbench."""
-        return render_dashboard_html()
+        metrics = active_metrics.calculate_metrics()
+        return render_dashboard_html(metrics=metrics)
 
     # ---------------- Health & Observability Endpoints ----------------
 
@@ -245,6 +246,16 @@ def create_siem_app(
         """Clear all stored events (for lab reset/testing)."""
         active_store.clear()
         return {"status": "success", "message": "Event store cleared"}
+
+    @app.post("/api/v1/reset", tags=["Management"])
+    @app.delete("/api/v1/reset", tags=["Management"])
+    def reset_lab_state() -> Dict[str, str]:
+        """Reset and clear all lab telemetry, alerts, incidents, and audit logs to clean baseline."""
+        active_store.clear()
+        active_alerts.clear()
+        active_incidents.clear()
+        active_audits.clear()
+        return {"status": "success", "message": "All SOC stores reset to clean baseline"}
 
     # ---------------- Detection Engine Endpoints ----------------
 
