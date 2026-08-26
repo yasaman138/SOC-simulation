@@ -43,6 +43,7 @@ class AlertStatus(str, Enum):
     TRIAGED = "triaged"
     INVESTIGATING = "investigating"
     CONTAINED = "contained"
+    RESOLVED = "resolved"
     CLOSED = "closed"
     FALSE_POSITIVE = "false_positive"
 
