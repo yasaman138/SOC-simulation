@@ -174,7 +174,7 @@ class SOCMetricsCalculator:
                     first_event_ts = first_ev.timestamp
 
                 if first_event_ts:
-                    delta_sec = max(0.01, (a.timestamp - first_event_ts).total_seconds())
+                    delta_sec = max(0.01, abs((a.timestamp - first_event_ts).total_seconds()))
                     mttd_list.append(delta_sec)
                 else:
                     mttd_list.append(0.05)
@@ -189,7 +189,7 @@ class SOCMetricsCalculator:
             if inc.timeline:
                 first_ts = inc.timeline[0].timestamp
                 last_ts = inc.timeline[-1].timestamp
-                delta = max(0.1, (last_ts - first_ts).total_seconds())
+                delta = max(0.1, abs((last_ts - first_ts).total_seconds()))
                 mttr_list.append(delta)
             else:
                 mttr_list.append(1.5)
