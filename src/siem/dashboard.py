@@ -541,7 +541,6 @@ def render_dashboard_html(metrics: Any = None) -> str:
     </div>
     <button id="btn-run-sim-hdr" class="btn btn-primary btn-sm" onclick="triggerSimulationDemo(this)">⚡ Run Attack Simulation</button>
     <button id="btn-refresh" class="btn btn-secondary btn-sm" onclick="refreshDashboard(this)"><span class="refresh-icon">🔄</span> Refresh</button>
-    <button id="btn-reset" class="btn btn-secondary btn-sm" onclick="resetLabToDefault(this)">🗑️ Reset Baseline</button>
   </div>
 </header>
 
@@ -708,43 +707,51 @@ def render_dashboard_html(metrics: Any = None) -> str:
     <div class="panel">
       <div class="panel-header">
         <div class="panel-title">🔍 Investigation UX Workflow</div>
-        <span class="badge badge-medium">Logical SOC Analyst Path</span>
+        <span class="badge badge-medium" id="investigate-incidents-badge">Active Investigations</span>
       </div>
 
-      <div class="stepper">
-        <div class="step-item active" onclick="setInvestigationStep(1)">
-          <div class="step-circle">1</div>
-          <div class="step-title">Alert Triage</div>
-        </div>
-        <div class="step-item" onclick="setInvestigationStep(2)">
-          <div class="step-circle">2</div>
-          <div class="step-title">Incident Creation</div>
-        </div>
-        <div class="step-item" onclick="setInvestigationStep(3)">
-          <div class="step-circle">3</div>
-          <div class="step-title">Timeline</div>
-        </div>
-        <div class="step-item" onclick="setInvestigationStep(4)">
-          <div class="step-circle">4</div>
-          <div class="step-title">Evidence & IOCs</div>
-        </div>
-        <div class="step-item" onclick="setInvestigationStep(5)">
-          <div class="step-circle">5</div>
-          <div class="step-title">MITRE ATT&CK</div>
-        </div>
-        <div class="step-item" onclick="setInvestigationStep(6)">
-          <div class="step-circle">6</div>
-          <div class="step-title">SOAR Response</div>
-        </div>
-        <div class="step-item" onclick="setInvestigationStep(7)">
-          <div class="step-circle">7</div>
-          <div class="step-title">Resolution & Report</div>
-        </div>
+      <!-- Open Incidents Selector List -->
+      <div id="investigation-incidents-selector" style="margin-bottom: 20px;">
+        <!-- Populated dynamically with open incidents -->
       </div>
 
-      <!-- Stepper Content Container -->
-      <div id="step-content-box" style="background:var(--bg-card-sub); border:1px solid var(--border-color); border-radius:10px; padding:24px;">
-        <!-- Step details rendered dynamically -->
+      <!-- Stepper UX wrapper -->
+      <div id="investigation-workflow-container">
+        <div class="stepper" id="investigation-stepper">
+          <div class="step-item active" onclick="setInvestigationStep(1)">
+            <div class="step-circle">1</div>
+            <div class="step-title">Alert Triage</div>
+          </div>
+          <div class="step-item" onclick="setInvestigationStep(2)">
+            <div class="step-circle">2</div>
+            <div class="step-title">Incident Creation</div>
+          </div>
+          <div class="step-item" onclick="setInvestigationStep(3)">
+            <div class="step-circle">3</div>
+            <div class="step-title">Timeline</div>
+          </div>
+          <div class="step-item" onclick="setInvestigationStep(4)">
+            <div class="step-circle">4</div>
+            <div class="step-title">Evidence & IOCs</div>
+          </div>
+          <div class="step-item" onclick="setInvestigationStep(5)">
+            <div class="step-circle">5</div>
+            <div class="step-title">MITRE ATT&CK</div>
+          </div>
+          <div class="step-item" onclick="setInvestigationStep(6)">
+            <div class="step-circle">6</div>
+            <div class="step-title">SOAR Response</div>
+          </div>
+          <div class="step-item" onclick="setInvestigationStep(7)">
+            <div class="step-circle">7</div>
+            <div class="step-title">Resolution & Report</div>
+          </div>
+        </div>
+
+        <!-- Stepper Content Container -->
+        <div id="step-content-box" style="background:var(--bg-card-sub); border:1px solid var(--border-color); border-radius:10px; padding:24px;">
+          <!-- Step details rendered dynamically -->
+        </div>
       </div>
     </div>
   </div>
@@ -832,6 +839,10 @@ def render_dashboard_html(metrics: Any = None) -> str:
   }
 
   let activeStep = 1;
+  let allOpenIncidents = [];
+  let selectedIncidentId = null;
+  let incidentSteps = {};
+
   let currentSampleIncident = {
     incident_id: "INC-DEMO-001",
     title: "Kerberoasting & Privileged Credential Extraction",
@@ -866,28 +877,117 @@ def render_dashboard_html(metrics: Any = None) -> str:
     if (target) target.classList.add('active');
 
     if (tabId === 'investigate') {
-      renderInvestigationStep(activeStep);
+      renderOpenIncidentsSelector();
+      const stepToRender = (selectedIncidentId && incidentSteps[selectedIncidentId]) ? incidentSteps[selectedIncidentId] : activeStep;
+      renderInvestigationStep(stepToRender);
     }
   }
 
-  function setInvestigationStep(stepNum) {
+  function selectIncidentToInvestigate(incId) {
+    selectedIncidentId = incId;
+    const inc = allOpenIncidents.find(i => i.incident_id === incId);
+    if (inc) {
+      currentSampleIncident = inc;
+    }
+    const currentStep = incidentSteps[incId] || 1;
+    setInvestigationStep(currentStep, false);
+    renderOpenIncidentsSelector();
+  }
+
+  function setInvestigationStep(stepNum, triggerResolve = true) {
+    if (selectedIncidentId) {
+      incidentSteps[selectedIncidentId] = stepNum;
+    }
     activeStep = stepNum;
+
     document.querySelectorAll('.step-item').forEach((s, idx) => {
       s.classList.remove('active', 'completed');
       if (idx + 1 === stepNum) s.classList.add('active');
       else if (idx + 1 < stepNum) s.classList.add('completed');
     });
 
-    if (stepNum === 7) {
+    if (stepNum === 7 && triggerResolve) {
       document.querySelectorAll('.step-item').forEach((s, idx) => {
         if (idx + 1 < 7) s.classList.add('completed');
         else s.classList.add('active', 'completed');
       });
-      if (currentSampleIncident && currentSampleIncident.incident_id) {
-        completeIncidentInvestigation(currentSampleIncident.incident_id);
+      const idToResolve = selectedIncidentId || (currentSampleIncident && currentSampleIncident.incident_id);
+      if (idToResolve) {
+        completeIncidentInvestigation(idToResolve);
       }
     }
     renderInvestigationStep(stepNum);
+    renderOpenIncidentsSelector();
+  }
+
+  function renderOpenIncidentsSelector() {
+    const container = document.getElementById('investigation-incidents-selector');
+    const workflowContainer = document.getElementById('investigation-workflow-container');
+    const badge = document.getElementById('investigate-incidents-badge');
+
+    if (!container) return;
+
+    if (badge) {
+      badge.innerText = allOpenIncidents.length + ' Open Incident' + (allOpenIncidents.length === 1 ? '' : 's');
+      badge.className = 'badge ' + (allOpenIncidents.length > 0 ? 'badge-high' : 'badge-success');
+    }
+
+    if (allOpenIncidents.length === 0) {
+      if (workflowContainer) workflowContainer.style.display = 'none';
+      container.innerHTML = `
+        <div style="background:var(--bg-card); border:1px solid var(--green); border-radius:10px; padding:32px; text-align:center;">
+          <div style="font-size:2.5rem; margin-bottom:12px;">🛡️</div>
+          <h3 style="color:#FFF; margin-bottom:8px;">No Open Incidents Under Active Investigation</h3>
+          <p style="color:var(--text-muted); max-width:600px; margin:0 auto 20px auto; font-size:0.9rem;">
+            All security incidents have been contained, remediated, and removed from active triage.
+            Click <strong>Investigate</strong> on any security alert to initiate a new 7-step investigation workflow.
+          </p>
+          <div style="display:flex; justify-content:center; gap:12px;">
+            <button class="btn btn-primary btn-sm" onclick="triggerSimulationDemo(this)">⚡ Run Attack Simulation</button>
+            <button class="btn btn-secondary btn-sm" onclick="switchTab('overview')">📊 Return to Overview</button>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    if (workflowContainer) workflowContainer.style.display = 'block';
+
+    // Ensure selectedIncidentId is valid
+    if (!selectedIncidentId || !allOpenIncidents.some(i => i.incident_id === selectedIncidentId)) {
+      selectedIncidentId = allOpenIncidents[0].incident_id;
+      currentSampleIncident = allOpenIncidents[0];
+      const curStep = incidentSteps[selectedIncidentId] || 1;
+      setInvestigationStep(curStep, false);
+    }
+
+    container.innerHTML = `
+      <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">
+        Active Incidents in Investigation Queue (${allOpenIncidents.length}):
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">
+        ${allOpenIncidents.map(inc => {
+          const isSelected = inc.incident_id === selectedIncidentId;
+          const step = incidentSteps[inc.incident_id] || 1;
+          const sevBadge = inc.severity === 'high' || inc.severity === 'critical' ? 'badge-critical' : 'badge-medium';
+          return `
+            <div onclick="selectIncidentToInvestigate('${escapeHtml(inc.incident_id)}')" style="cursor:pointer; background:${isSelected ? 'rgba(99,102,241,0.15)' : 'var(--bg-card)'}; border:2px solid ${isSelected ? 'var(--indigo)' : 'var(--border-color)'}; border-radius:8px; padding:14px; box-shadow:${isSelected ? '0 0 12px var(--indigo-glow)' : 'none'}; transition:all 0.2s;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <code style="font-weight:bold;">${escapeHtml(inc.incident_id)}</code>
+                <span class="badge ${sevBadge}">${escapeHtml(inc.severity.toUpperCase())}</span>
+              </div>
+              <div style="font-size:0.85rem; font-weight:600; color:#FFF; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:8px;">
+                ${escapeHtml(inc.title)}
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:var(--text-muted);">
+                <span>Progress: <strong style="color:var(--cyan);">Step ${step}/7</strong></span>
+                <span style="color:${isSelected ? 'var(--indigo)' : 'var(--text-dim)'};">${isSelected ? '● Active' : 'Select &rarr;'}</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
   }
 
   function completeIncidentInvestigation(incId) {
@@ -895,12 +995,16 @@ def render_dashboard_html(metrics: Any = None) -> str:
     return fetch('/api/v1/incidents/' + encodeURIComponent(incId) + '/resolve', { method: 'POST' })
       .then(r => r.json())
       .then(data => {
-        if (currentSampleIncident && (currentSampleIncident.incident_id === incId || incId.startsWith('INC-DEMO'))) {
-          currentSampleIncident.status = 'contained';
-          currentSampleIncident.containment_status = 'contained';
-          currentSampleIncident.remediation_status = 'remediated';
-          currentSampleIncident.recovery_status = 'verified';
-          currentSampleIncident.final_disposition = 'true_positive_malicious';
+        allOpenIncidents = allOpenIncidents.filter(i => i.incident_id !== incId);
+        delete incidentSteps[incId];
+
+        if (selectedIncidentId === incId) {
+          if (allOpenIncidents.length > 0) {
+            selectedIncidentId = allOpenIncidents[0].incident_id;
+            currentSampleIncident = allOpenIncidents[0];
+          } else {
+            selectedIncidentId = null;
+          }
         }
         return fetchAndRenderAllData();
       })
@@ -914,46 +1018,61 @@ def render_dashboard_html(metrics: Any = None) -> str:
     const box = document.getElementById('step-content-box');
     if (!box) return;
 
+    const incId = currentSampleIncident?.incident_id || 'INC-DEMO-001';
+    const incTitle = currentSampleIncident?.title || 'Kerberoasting & Privileged Credential Extraction';
+    const incSev = (currentSampleIncident?.severity || 'HIGH').toUpperCase();
+    const sevBadge = incSev === 'HIGH' || incSev === 'CRITICAL' ? 'badge-critical' : 'badge-medium';
+    const incAssets = (currentSampleIncident?.affected_assets && currentSampleIncident.affected_assets.length > 0) ? currentSampleIncident.affected_assets : ['dc01.corp.enterprise.local (172.28.20.10)'];
+    const incUsers = (currentSampleIncident?.affected_users && currentSampleIncident.affected_users.length > 0) ? currentSampleIncident.affected_users : ['svc_sql', 'jdoe'];
+    const targetUser = incUsers[0] || 'svc_sql';
+    const targetAsset = incAssets[0] || '172.28.10.100';
+
     if (step === 1) {
       box.innerHTML = `
-        <h3 style="color:#FFF; margin-bottom:10px;">Step 1: Alert Triage</h3>
-        <p style="color:var(--text-muted); margin-bottom:16px;">Analyst receives a High-Severity security alert triggered by Detection Engine Rule <code>DET-CRED-002</code>.</p>
+        <h3 style="color:#FFF; margin-bottom:10px;">Step 1: Alert Triage & Scope (${escapeHtml(incId)})</h3>
+        <p style="color:var(--text-muted); margin-bottom:16px;">Analyst evaluates security alert trigger and validates detection fidelity.</p>
         <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:16px; margin-bottom:20px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>Alert [ALT-9481A]: Multiple Kerberos TGS Requests for Service Accounts (Kerberoasting)</strong>
-            <span class="badge badge-high">HIGH</span>
+            <strong>Incident [${escapeHtml(incId)}]: ${escapeHtml(incTitle)}</strong>
+            <span class="badge ${sevBadge}">${incSev}</span>
           </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">Tactics: <code>Credential Access (T1558.003)</code> | Source: <code>dc01.corp.enterprise.local</code> | User: <code>jdoe</code></p>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">
+            Target Entities: <code>${escapeHtml(incAssets.join(', '))}</code> | Targeted User: <code>${escapeHtml(incUsers.join(', '))}</code>
+          </p>
         </div>
-        <button class="btn btn-primary" onclick="setInvestigationStep(2)">Proceed to Step 2: Create Incident &rarr;</button>
+        <button class="btn btn-primary" onclick="setInvestigationStep(2)">Proceed to Step 2: Incident Creation & Scoping &rarr;</button>
       `;
     } else if (step === 2) {
       box.innerHTML = `
-        <h3 style="color:#FFF; margin-bottom:10px;">Step 2: Incident Creation & Scoping</h3>
-        <p style="color:var(--text-muted); margin-bottom:16px;">Automated Investigation Engine promotes Alert into Incident <code>INC-DEMO-001</code>.</p>
+        <h3 style="color:#FFF; margin-bottom:10px;">Step 2: Incident Creation & Scoping (${escapeHtml(incId)})</h3>
+        <p style="color:var(--text-muted); margin-bottom:16px;">Automated Investigation Engine promotes Alert into active Incident <code>${escapeHtml(incId)}</code>.</p>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
           <div style="background:var(--bg-card); padding:14px; border-radius:8px;">
             <div style="font-size:0.78rem; color:var(--text-muted);">AFFECTED ASSETS</div>
-            <div style="font-weight:bold; margin-top:4px;">dc01.corp.enterprise.local (172.28.20.10)</div>
+            <div style="font-weight:bold; margin-top:4px;">${escapeHtml(incAssets.join(', '))}</div>
           </div>
           <div style="background:var(--bg-card); padding:14px; border-radius:8px;">
             <div style="font-size:0.78rem; color:var(--text-muted);">TARGETED IDENTITIES</div>
-            <div style="font-weight:bold; margin-top:4px;">svc_sql (Domain SPN Account), jdoe</div>
+            <div style="font-weight:bold; margin-top:4px;">${escapeHtml(incUsers.join(', '))}</div>
           </div>
         </div>
         <button class="btn btn-primary" onclick="setInvestigationStep(3)">Proceed to Step 3: Correlate Timeline &rarr;</button>
       `;
     } else if (step === 3) {
+      const timelineData = (currentSampleIncident?.timeline && currentSampleIncident.timeline.length > 0) ? currentSampleIncident.timeline : [
+        { timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19), category: "authentication", is_key_event: false, title: "Initial Authentication Anomalies", description: "Telemetry collected from endpoint and host." },
+        { timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19), category: "detection", is_key_event: true, title: incTitle, description: "Detection rule match and automated scoping." }
+      ];
       box.innerHTML = `
-        <h3 style="color:#FFF; margin-bottom:10px;">Step 3: Multi-Source Timeline Correlation</h3>
+        <h3 style="color:#FFF; margin-bottom:10px;">Step 3: Multi-Source Timeline Correlation (${escapeHtml(incId)})</h3>
         <p style="color:var(--text-muted); margin-bottom:16px;">Correlating Windows EventLogs, Linux Syslog, and Web App Telemetry into a unified chronological sequence.</p>
         <div class="timeline-container" style="margin-bottom:20px;">
-          ${currentSampleIncident.timeline.map(t => `
+          ${timelineData.map(t => `
             <div class="timeline-node ${t.is_key_event ? 'key-event' : ''}">
               <div class="timeline-box">
                 <div class="timeline-header">
                   <span>${escapeHtml(t.timestamp)}</span>
-                  <code>${escapeHtml(t.category)}</code>
+                  <code>${escapeHtml(t.category || 'general')}</code>
                 </div>
                 <div class="timeline-title">${t.is_key_event ? '⚡ ' : ''}${escapeHtml(t.title)}</div>
                 <div style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(t.description)}</div>
@@ -964,13 +1083,17 @@ def render_dashboard_html(metrics: Any = None) -> str:
         <button class="btn btn-primary" onclick="setInvestigationStep(4)">Proceed to Step 4: Review Evidence & IOCs &rarr;</button>
       `;
     } else if (step === 4) {
+      const indicatorData = (currentSampleIncident?.indicators && currentSampleIncident.indicators.length > 0) ? currentSampleIncident.indicators : [
+        { type: "ip", value: targetAsset, reputation: "MALICIOUS", confidence: 0.95, context: "Associated host address" },
+        { type: "user", value: targetUser, reputation: "SUSPICIOUS", confidence: 0.85, context: "Compromised account entity" }
+      ];
       box.innerHTML = `
-        <h3 style="color:#FFF; margin-bottom:10px;">Step 4: Forensic Evidence & Indicators (IOCs)</h3>
+        <h3 style="color:#FFF; margin-bottom:10px;">Step 4: Forensic Evidence & Indicators (${escapeHtml(incId)})</h3>
         <p style="color:var(--text-muted); margin-bottom:16px;">Extracted observable threat indicators enriched with local Threat Intelligence feeds.</p>
         <table>
           <thead><tr><th>Type</th><th>Value</th><th>Reputation</th><th>Confidence</th><th>Context</th></tr></thead>
           <tbody>
-            ${currentSampleIncident.indicators.map(i => `
+            ${indicatorData.map(i => `
               <tr>
                 <td><code>${escapeHtml(i.type)}</code></td>
                 <td><code>${escapeHtml(i.value)}</code></td>
@@ -987,31 +1110,29 @@ def render_dashboard_html(metrics: Any = None) -> str:
       `;
     } else if (step === 5) {
       box.innerHTML = `
-        <h3 style="color:#FFF; margin-bottom:10px;">Step 5: MITRE ATT&CK Mapping & Defensive Guidance</h3>
+        <h3 style="color:#FFF; margin-bottom:10px;">Step 5: MITRE ATT&CK Mapping & Defensive Guidance (${escapeHtml(incId)})</h3>
         <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:16px; margin-bottom:20px;">
-          <h4 style="color:var(--cyan);">Technique: Steal or Forge Kerberos Tickets: Kerberoasting (T1558.003)</h4>
+          <h4 style="color:var(--cyan);">${escapeHtml(incTitle)}</h4>
           <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">
-            <strong>Tactic:</strong> Credential Access<br>
-            <strong>Mechanism:</strong> Requesting Kerberos service tickets for accounts with SPNs using weak RC4 encryption enables offline hash cracking.<br>
-            <strong>Recommended Mitigation:</strong> Enforce AES-256 Kerberos encryption, rotate SPN passwords to 25+ characters, and isolate service accounts.
+            <strong>Investigation Scope:</strong> Multi-stage adversary behavior verified across endpoint telemetry.<br>
+            <strong>Recommended Mitigation:</strong> Revoke compromised credentials, isolate affected hosts, and block associated adversary network observables.
           </p>
         </div>
         <button class="btn btn-primary" onclick="setInvestigationStep(6)">Proceed to Step 6: Execute SOAR Response &rarr;</button>
       `;
     } else if (step === 6) {
       box.innerHTML = `
-        <h3 style="color:#FFF; margin-bottom:10px;">Step 6: Automated SOAR Containment & Remediation</h3>
+        <h3 style="color:#FFF; margin-bottom:10px;">Step 6: Automated SOAR Containment & Remediation (${escapeHtml(incId)})</h3>
         <p style="color:var(--text-muted); margin-bottom:16px;">Execute safe, audited containment actions with automated safety guardrails.</p>
         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
-          <button class="btn btn-danger btn-sm" onclick="executeDemoAction('disable_user', 'svc_sql')">🔒 Disable Compromised User 'svc_sql'</button>
-          <button class="btn btn-danger btn-sm" onclick="executeDemoAction('revoke_sessions', 'svc_sql')">⚡ Revoke Active Kerberos Sessions</button>
-          <button class="btn btn-danger btn-sm" onclick="executeDemoAction('block_ioc', '172.28.10.100')">🚫 Block Attacker IP at Perimeter</button>
+          <button class="btn btn-danger btn-sm" onclick="executeDemoAction('disable_user', '${escapeHtml(targetUser)}')">🔒 Disable Compromised User '${escapeHtml(targetUser)}'</button>
+          <button class="btn btn-danger btn-sm" onclick="executeDemoAction('revoke_sessions', '${escapeHtml(targetUser)}')">⚡ Revoke Active Sessions</button>
+          <button class="btn btn-danger btn-sm" onclick="executeDemoAction('block_ioc', '${escapeHtml(targetAsset)}')">🚫 Block Attacker IP at Perimeter</button>
         </div>
         <div id="action-feedback" style="margin-bottom:16px;"></div>
         <button class="btn btn-primary" onclick="setInvestigationStep(7)">Proceed to Step 7: Final Resolution &rarr;</button>
       `;
     } else if (step === 7) {
-      const incId = currentSampleIncident?.incident_id || 'INC-DEMO-001';
       box.innerHTML = `
         <h3 style="color:#FFF; margin-bottom:10px;">Step 7: Final Resolution & Incident Report</h3>
         <p style="color:var(--text-muted); margin-bottom:16px;">Incident <code>${escapeHtml(incId)}</code> successfully mitigated, accounts secured, and verified clean.</p>
@@ -1020,7 +1141,7 @@ def render_dashboard_html(metrics: Any = None) -> str:
             <strong style="color:var(--green);">Disposition: TRUE_POSITIVE_MALICIOUS (Contained & Remediated)</strong>
             <span class="badge badge-success">CONTAINED & REMEDIATED</span>
           </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">All 12 structured report sections have been synthesized.</p>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">All 12 structured report sections have been synthesized and the incident is removed from active triage.</p>
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <a href="/api/v1/reports/incident/${encodeURIComponent(incId)}?format=html" target="_blank" class="btn btn-primary">📄 View Printable HTML Report</a>
@@ -1053,9 +1174,12 @@ def render_dashboard_html(metrics: Any = None) -> str:
     return fetch('/api/v1/reset', { method: 'POST' })
       .then(r => r.json())
       .then(() => {
+        allOpenIncidents = [];
+        incidentSteps = {};
+        selectedIncidentId = null;
         activeStep = 1;
         switchTab('overview');
-        setInvestigationStep(1);
+        setInvestigationStep(1, false);
         return fetchAndRenderAllData();
       })
       .catch(err => {
@@ -1109,25 +1233,29 @@ def render_dashboard_html(metrics: Any = None) -> str:
           fetch('/api/v1/incidents/' + encodeURIComponent(data.incident_id))
             .then(r => r.json())
             .then(inc => {
+              if (!allOpenIncidents.some(i => i.incident_id === inc.incident_id)) {
+                allOpenIncidents.push(inc);
+              }
+              if (!incidentSteps[inc.incident_id]) {
+                incidentSteps[inc.incident_id] = 1;
+              }
+              selectedIncidentId = inc.incident_id;
               currentSampleIncident = inc;
               switchTab('investigate');
-              setInvestigationStep(1);
+              setInvestigationStep(incidentSteps[inc.incident_id] || 1, false);
               fetchAndRenderAllData();
             })
             .catch(() => {
               switchTab('investigate');
-              setInvestigationStep(1);
               fetchAndRenderAllData();
             });
         } else {
           switchTab('investigate');
-          setInvestigationStep(1);
           fetchAndRenderAllData();
         }
       })
       .catch(() => {
         switchTab('investigate');
-        setInvestigationStep(1);
         fetchAndRenderAllData();
       });
   }
@@ -1227,18 +1355,23 @@ def render_dashboard_html(metrics: Any = None) -> str:
         const table = document.getElementById('recent-alerts-table');
         const allTable = document.getElementById('all-alerts-table');
         if (data.alerts && data.alerts.length > 0) {
-          const rows = data.alerts.slice(0, 10).map(a => {
-            const sevBadge = a.severity === 'high' || a.severity === 'critical' ? 'badge-critical' : 'badge-medium';
-            return `
-              <tr>
-                <td><span class="badge ${sevBadge}">${escapeHtml(a.severity.toUpperCase())}</span></td>
-                <td><code>${escapeHtml(a.rule_id)}</code></td>
-                <td><strong>${escapeHtml(a.title)}</strong></td>
-                <td><button class="btn btn-secondary btn-sm" onclick="investigateAlert('${escapeHtml(a.id)}')">Investigate</button></td>
-              </tr>
-            `;
-          }).join('');
-          if (table) table.innerHTML = rows;
+          const activeAlerts = data.alerts.filter(a => a.status !== 'contained' && a.status !== 'closed' && a.status !== 'resolved');
+          if (activeAlerts.length > 0) {
+            const rows = activeAlerts.slice(0, 10).map(a => {
+              const sevBadge = a.severity === 'high' || a.severity === 'critical' ? 'badge-critical' : 'badge-medium';
+              return `
+                <tr>
+                  <td><span class="badge ${sevBadge}">${escapeHtml(a.severity.toUpperCase())}</span></td>
+                  <td><code>${escapeHtml(a.rule_id)}</code></td>
+                  <td><strong>${escapeHtml(a.title)}</strong></td>
+                  <td><button class="btn btn-secondary btn-sm" onclick="investigateAlert('${escapeHtml(a.id)}')">Investigate</button></td>
+                </tr>
+              `;
+            }).join('');
+            if (table) table.innerHTML = rows;
+          } else {
+            if (table) table.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); text-align:center;">No active alerts. Run simulation to trigger detections.</td></tr>';
+          }
 
           const allRows = data.alerts.map(a => {
             const sevBadge = a.severity === 'high' || a.severity === 'critical' ? 'badge-critical' : 'badge-medium';
@@ -1270,21 +1403,33 @@ def render_dashboard_html(metrics: Any = None) -> str:
         const recTable = document.getElementById('recent-incidents-table');
         const allTable = document.getElementById('all-incidents-table');
         if (data.incidents && data.incidents.length > 0) {
-          const recRows = data.incidents.slice(0, 10).map(i => {
-            const sevBadge = i.severity === 'high' || i.severity === 'critical' ? 'badge-critical' : 'badge-medium';
-            const isContained = i.containment_status === 'contained' || i.remediation_status === 'remediated' || i.status === 'contained' || i.status === 'recovered' || i.status === 'eradicated';
-            const statusBadge = isContained ? 'badge-success' : 'badge-info';
-            const statusLabel = isContained ? 'CONTAINED' : escapeHtml((i.status || 'new').toUpperCase());
-            return `
-              <tr>
-                <td><code>${escapeHtml(i.incident_id)}</code></td>
-                <td><span class="badge ${sevBadge}">${escapeHtml(i.severity.toUpperCase())}</span></td>
-                <td><strong>${escapeHtml(i.title)}</strong></td>
-                <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
-              </tr>
-            `;
-          }).join('');
-          if (recTable) recTable.innerHTML = recRows;
+          const activeIncidents = data.incidents.filter(i => 
+            i.containment_status !== 'contained' && 
+            i.remediation_status !== 'remediated' && 
+            i.status !== 'contained' && 
+            i.status !== 'recovered' && 
+            i.status !== 'eradicated' && 
+            i.status !== 'closed'
+          );
+          allOpenIncidents = activeIncidents;
+          renderOpenIncidentsSelector();
+
+          if (activeIncidents.length > 0) {
+            const recRows = activeIncidents.slice(0, 10).map(i => {
+              const sevBadge = i.severity === 'high' || i.severity === 'critical' ? 'badge-critical' : 'badge-medium';
+              return `
+                <tr>
+                  <td><code>${escapeHtml(i.incident_id)}</code></td>
+                  <td><span class="badge ${sevBadge}">${escapeHtml(i.severity.toUpperCase())}</span></td>
+                  <td><strong>${escapeHtml(i.title)}</strong></td>
+                  <td><span class="badge badge-info">${escapeHtml((i.status || 'new').toUpperCase())}</span></td>
+                </tr>
+              `;
+            }).join('');
+            if (recTable) recTable.innerHTML = recRows;
+          } else {
+            if (recTable) recTable.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); text-align:center;">No open incidents.</td></tr>';
+          }
 
           const allRows = data.incidents.map(i => {
             const sevBadge = i.severity === 'high' || i.severity === 'critical' ? 'badge-critical' : 'badge-medium';
@@ -1307,6 +1452,8 @@ def render_dashboard_html(metrics: Any = None) -> str:
           }).join('');
           if (allTable) allTable.innerHTML = allRows;
         } else {
+          allOpenIncidents = [];
+          renderOpenIncidentsSelector();
           if (recTable) recTable.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); text-align:center;">No open incidents.</td></tr>';
           if (allTable) allTable.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No incidents stored.</td></tr>';
         }
