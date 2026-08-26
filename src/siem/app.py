@@ -371,7 +371,7 @@ def create_siem_app(
         scenarios = reg.list_scenarios()
         return {
             "total_scenarios": len(scenarios),
-            "scenarios": [s.to_dict() for s in scenarios],
+            "scenarios": [s.to_metadata_dict() for s in scenarios],
         }
 
     # ---------------- Security Alerts Endpoints ----------------
