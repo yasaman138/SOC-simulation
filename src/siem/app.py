@@ -54,6 +54,13 @@ class PlaybookExecutionRequest(BaseModel):
     actor: str = Field(default="soar_automation", max_length=100)
 
 
+class SimulationRunRequest(BaseModel):
+    scenario: Optional[str] = Field(default=None, max_length=100)
+    attack: Optional[bool] = Field(default=True)
+    benign: Optional[bool] = Field(default=False)
+    create_incident: Optional[bool] = Field(default=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Start UDP syslog listener if configured
@@ -269,6 +276,102 @@ def create_siem_app(
             "status": "success",
             "alerts_generated": len(alerts),
             "alert_ids": [a.id for a in alerts],
+        }
+
+    # ---------------- Attack Simulation Endpoints ----------------
+
+    @app.post("/api/v1/simulation/run", tags=["Simulation"])
+    @app.post("/api/v1/simulation/simulate", tags=["Simulation"])
+    def run_simulation(
+        request: Optional[SimulationRunRequest] = None,
+        scenario: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Execute attack simulation scenarios and ingest real telemetry into SIEM platform."""
+        from fastapi.testclient import TestClient
+        from src.infra.ad_directory.server import ActiveDirectoryServer
+        from src.infra.linux_server.service import LinuxServerService
+        from src.simulation.models import SimulationContext
+        from src.simulation.registry import ScenarioRegistry
+        from src.simulation.runner import SimulationRunner
+        from src.vulnapp.app import create_app
+        from src.vulnapp.telemetry import AppTelemetryClient
+
+        target_scenario_id = scenario or (request.scenario if request else None)
+        run_attack = request.attack if request and request.attack is not None else True
+        run_benign = request.benign if request and request.benign is not None else False
+        auto_incident = request.create_incident if request and request.create_incident is not None else True
+
+        ad = ActiveDirectoryServer(siem_collector=active_collector)
+        linux = LinuxServerService(siem_collector=active_collector)
+        telemetry = AppTelemetryClient(local_collector=active_collector)
+        vuln_app = create_app(
+            database_url="sqlite:///:memory:",
+            telemetry_client=telemetry,
+            enable_vulnerabilities=True,
+        )
+        vuln_client = TestClient(vuln_app)
+
+        sim_context = SimulationContext(
+            siem_collector=active_collector,
+            event_store=active_store,
+            alert_store=active_alerts,
+            detection_engine=active_engine,
+            ad_server=ad,
+            linux_service=linux,
+            vuln_client=vuln_client,
+            dry_run=False,
+        )
+
+        registry = ScenarioRegistry()
+        runner = SimulationRunner(registry=registry)
+
+        if target_scenario_id:
+            scn = registry.get_scenario(target_scenario_id)
+            if not scn:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Scenario '{target_scenario_id}' not found",
+                )
+            target_scenarios = [scn]
+        elif run_benign and not run_attack:
+            target_scenarios = registry.list_scenarios(is_benign=True)
+        elif run_attack and not run_benign:
+            target_scenarios = registry.list_scenarios(is_benign=False)
+        else:
+            target_scenarios = registry.list_scenarios()
+
+        results = runner.run_all(sim_context, scenarios=target_scenarios)
+        report = runner.generate_coverage_report(results)
+
+        incident_id = None
+        if auto_incident:
+            current_alerts = active_alerts.query_alerts()
+            if current_alerts and active_incidents.count() == 0:
+                top_alert = current_alerts[0]
+                inc = active_inv.create_incident_from_alert(top_alert)
+                active_incidents.add_incident(inc)
+                incident_id = inc.incident_id
+
+        return {
+            "status": "success",
+            "scenarios_executed": len(results),
+            "passed_scenarios": sum(1 for _, _, val in results if val.passed),
+            "total_telemetry_events": active_store.count(),
+            "total_alerts": active_alerts.count(),
+            "total_incidents": active_incidents.count(),
+            "auto_promoted_incident_id": incident_id,
+            "coverage_summary": report.summary,
+        }
+
+    @app.get("/api/v1/simulation/scenarios", tags=["Simulation"])
+    def list_simulation_scenarios() -> Dict[str, Any]:
+        """List registered simulation attack scenarios and benign controls."""
+        from src.simulation.registry import ScenarioRegistry
+        reg = ScenarioRegistry()
+        scenarios = reg.list_scenarios()
+        return {
+            "total_scenarios": len(scenarios),
+            "scenarios": [s.to_dict() for s in scenarios],
         }
 
     # ---------------- Security Alerts Endpoints ----------------
