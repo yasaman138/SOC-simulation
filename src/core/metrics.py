@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from src.core.logging import get_logger
-from src.detection.models import Alert, MitreTactic
+from src.detection.models import Alert, AlertStatus, MitreTactic
 from src.detection.rules import get_default_rules
 from src.detection.storage import AlertStore
 from src.response.models import (
@@ -120,6 +120,17 @@ class SOCMetricsCalculator:
         rules = get_default_rules()
         scenarios = self.scenario_registry.list_scenarios()
 
+        # Active alerts (uncontained/unclosed/unresolved)
+        active_alerts = [
+            a for a in alerts
+            if a.status not in (
+                AlertStatus.CONTAINED,
+                AlertStatus.RESOLVED,
+                AlertStatus.CLOSED,
+                AlertStatus.FALSE_POSITIVE,
+            )
+        ]
+
         # Severity distributions
         alerts_by_sev: Dict[str, int] = {
             "critical": 0,
@@ -129,7 +140,7 @@ class SOCMetricsCalculator:
             "informational": 0,
         }
         alerts_by_tactic: Dict[str, int] = {}
-        for a in alerts:
+        for a in active_alerts:
             s_val = a.severity.value
             alerts_by_sev[s_val] = alerts_by_sev.get(s_val, 0) + 1
             if a.mitre_attack:
@@ -290,7 +301,7 @@ class SOCMetricsCalculator:
 
         return SOCMetricsSummary(
             total_telemetry_events=len(events),
-            total_alerts=len(alerts),
+            total_alerts=len(active_alerts),
             total_incidents=len(incidents),
             open_incidents=open_cnt,
             contained_incidents=contained_cnt,
