@@ -559,6 +559,21 @@ def create_siem_app(
             )
         )
         active_incidents.update_incident(inc)
+
+        # Update associated alert(s) to contained status
+        for alt_id in inc.detection_source:
+            active_alerts.update_status(
+                alt_id,
+                AlertStatus.CONTAINED,
+                note="Contained via 7-step SOC investigation",
+            )
+        if inc.metadata and inc.metadata.get("primary_alert_id"):
+            active_alerts.update_status(
+                inc.metadata["primary_alert_id"],
+                AlertStatus.CONTAINED,
+                note="Contained via 7-step SOC investigation",
+            )
+
         return {
             "status": "success",
             "incident_id": inc.incident_id,
@@ -601,6 +616,20 @@ def create_siem_app(
             actor=pb_actor,
         )
         active_incidents.update_incident(resolved_inc)
+
+        # Update associated alert(s) to contained status
+        for alt_id in resolved_inc.detection_source:
+            active_alerts.update_status(
+                alt_id,
+                AlertStatus.CONTAINED,
+                note="Contained via automated playbook response",
+            )
+        if resolved_inc.metadata and resolved_inc.metadata.get("primary_alert_id"):
+            active_alerts.update_status(
+                resolved_inc.metadata["primary_alert_id"],
+                AlertStatus.CONTAINED,
+                note="Contained via automated playbook response",
+            )
 
         return {
             "status": "success",
