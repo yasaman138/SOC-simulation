@@ -473,6 +473,7 @@ def render_dashboard_html() -> str:
       <div class="pulse-dot"></div>
       <span>SYSTEM HEALTHY</span>
     </div>
+    <button class="btn btn-primary btn-sm" onclick="triggerSimulationDemo(this)">⚡ Run Attack Simulation</button>
     <button class="btn btn-secondary btn-sm" onclick="fetchAndRenderAllData()">🔄 Refresh</button>
   </div>
 </header>
@@ -508,17 +509,17 @@ def render_dashboard_html() -> str:
     </div>
     <div class="stat-card accent-indigo">
       <div class="stat-label">Mean Time To Detect (MTTD)</div>
-      <div class="stat-value" id="metric-mttd">0.05s</div>
+      <div class="stat-value" id="metric-mttd">0.00s</div>
       <div class="stat-sub">Telemetry to Alert Latency</div>
     </div>
     <div class="stat-card accent-indigo">
       <div class="stat-label">Mean Time To Respond (MTTR)</div>
-      <div class="stat-value" id="metric-mttr">1.50s</div>
+      <div class="stat-value" id="metric-mttr">0.00s</div>
       <div class="stat-sub">Alert to Containment Latency</div>
     </div>
     <div class="stat-card accent-green">
       <div class="stat-label">Detection Rate</div>
-      <div class="stat-value" id="metric-det-rate">100%</div>
+      <div class="stat-value" id="metric-det-rate">100.0%</div>
       <div class="stat-sub">24/24 Attack Scenarios</div>
     </div>
     <div class="stat-card accent-green">
@@ -930,9 +931,59 @@ def render_dashboard_html() -> str:
     fetchAndRenderAllData();
   }
 
-  function triggerSimulationDemo() {
-    fetch('/api/v1/detections/evaluate', { method: 'POST' })
-      .then(() => fetchAndRenderAllData());
+  function triggerSimulationDemo(btnElement) {
+    const btn = btnElement || document.querySelector('#tab-alerts .btn-primary');
+    const origText = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '⚡ Simulating Attack Scenarios...';
+    }
+    fetch('/api/v1/simulation/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attack: true, create_incident: true })
+    })
+      .then(r => r.json())
+      .then(() => {
+        fetchAndRenderAllData();
+      })
+      .catch(err => {
+        console.error('Simulation error:', err);
+      })
+      .finally(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origText || '⚡ Run Attack Simulation';
+        }
+      });
+  }
+
+  function investigateAlert(alertId) {
+    fetch('/api/v1/incidents/investigate/' + encodeURIComponent(alertId), { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success' && data.incident_id) {
+          fetch('/api/v1/incidents/' + encodeURIComponent(data.incident_id))
+            .then(r => r.json())
+            .then(inc => {
+              currentSampleIncident = inc;
+              switchTab('investigate');
+              setInvestigationStep(1);
+              fetchAndRenderAllData();
+            })
+            .catch(() => {
+              switchTab('investigate');
+              fetchAndRenderAllData();
+            });
+        } else {
+          switchTab('investigate');
+          fetchAndRenderAllData();
+        }
+      })
+      .catch(() => {
+        switchTab('investigate');
+        fetchAndRenderAllData();
+      });
   }
 
   function runDeepHealthCheck() {
@@ -945,23 +996,23 @@ def render_dashboard_html() -> str:
   }
 
   function fetchAndRenderAllData() {
-    // Fetch metrics
+    // 1. Fetch metrics
     fetch('/api/v1/metrics/soc')
       .then(r => r.json())
       .then(m => {
-        document.getElementById('metric-events').innerText = m.total_telemetry_events || 0;
-        document.getElementById('metric-alerts').innerText = m.total_alerts || 0;
-        document.getElementById('metric-incidents').innerText = m.total_incidents || 0;
-        document.getElementById('metric-mttd').innerText = (m.mttd_seconds || 0.05).toFixed(2) + 's';
-        document.getElementById('metric-mttr').innerText = (m.mttr_seconds || 1.5).toFixed(2) + 's';
-        document.getElementById('metric-det-rate').innerText = (m.detection_rate_percent || 100).toFixed(1) + '%';
-        document.getElementById('metric-fp-rate').innerText = (m.false_positive_rate_percent || 0.0).toFixed(1) + '%';
-        document.getElementById('tab-alert-count').innerText = m.total_alerts || 0;
-        document.getElementById('tab-inc-count').innerText = m.total_incidents || 0;
+        document.getElementById('metric-events').innerText = m.total_telemetry_events ?? 0;
+        document.getElementById('metric-alerts').innerText = m.total_alerts ?? 0;
+        document.getElementById('metric-incidents').innerText = m.total_incidents ?? 0;
+        document.getElementById('metric-mttd').innerText = ((m.mttd_seconds !== undefined && m.mttd_seconds !== null) ? m.mttd_seconds : 0).toFixed(2) + 's';
+        document.getElementById('metric-mttr').innerText = ((m.mttr_seconds !== undefined && m.mttr_seconds !== null) ? m.mttr_seconds : 0).toFixed(2) + 's';
+        document.getElementById('metric-det-rate').innerText = ((m.detection_rate_percent !== undefined && m.detection_rate_percent !== null) ? m.detection_rate_percent : 100).toFixed(1) + '%';
+        document.getElementById('metric-fp-rate').innerText = ((m.false_positive_rate_percent !== undefined && m.false_positive_rate_percent !== null) ? m.false_positive_rate_percent : 0).toFixed(1) + '%';
+        document.getElementById('tab-alert-count').innerText = m.total_alerts ?? 0;
+        document.getElementById('tab-inc-count').innerText = m.total_incidents ?? 0;
 
-        const critCount = (m.alerts_by_severity.critical || 0) + (m.alerts_by_severity.high || 0);
+        const critCount = (m.alerts_by_severity?.critical || 0) + (m.alerts_by_severity?.high || 0);
         document.getElementById('metric-crit-alerts').innerText = critCount;
-        document.getElementById('metric-active-incidents').innerText = m.open_incidents || 0;
+        document.getElementById('metric-active-incidents').innerText = m.open_incidents ?? 0;
 
         // Render tactics heat grid
         const tacticsBox = document.getElementById('tactics-container');
@@ -972,7 +1023,7 @@ def render_dashboard_html() -> str:
             "Collection", "Command and Control", "Impact"
           ];
           tacticsBox.innerHTML = tacticsList.map(t => {
-            const count = m.alerts_by_tactic[t] || 0;
+            const count = (m.alerts_by_tactic && m.alerts_by_tactic[t]) || 0;
             return `
               <div class="tactic-card">
                 <div class="tactic-count">${count}</div>
@@ -984,21 +1035,21 @@ def render_dashboard_html() -> str:
       })
       .catch(() => {});
 
-    // Fetch alerts
-    fetch('/api/v1/alerts?limit=10')
+    // 2. Fetch alerts
+    fetch('/api/v1/alerts?limit=50')
       .then(r => r.json())
       .then(data => {
         const table = document.getElementById('recent-alerts-table');
         const allTable = document.getElementById('all-alerts-table');
         if (data.alerts && data.alerts.length > 0) {
-          const rows = data.alerts.map(a => {
+          const rows = data.alerts.slice(0, 10).map(a => {
             const sevBadge = a.severity === 'high' || a.severity === 'critical' ? 'badge-critical' : 'badge-medium';
             return `
               <tr>
                 <td><span class="badge ${sevBadge}">${escapeHtml(a.severity.toUpperCase())}</span></td>
                 <td><code>${escapeHtml(a.rule_id)}</code></td>
                 <td><strong>${escapeHtml(a.title)}</strong></td>
-                <td><button class="btn btn-secondary btn-sm" onclick="switchTab('investigate')">Investigate</button></td>
+                <td><button class="btn btn-secondary btn-sm" onclick="investigateAlert('${escapeHtml(a.id)}')">Investigate</button></td>
               </tr>
             `;
           }).join('');
@@ -1015,16 +1066,88 @@ def render_dashboard_html() -> str:
                 <td><strong>${escapeHtml(a.title)}</strong></td>
                 <td>${escapeHtml(hostUser) || 'N/A'}</td>
                 <td>${escapeHtml(a.timestamp)}</td>
-                <td><button class="btn btn-primary btn-sm" onclick="switchTab('investigate')">🚀 Investigate</button></td>
+                <td><button class="btn btn-primary btn-sm" onclick="investigateAlert('${escapeHtml(a.id)}')">🚀 Investigate</button></td>
               </tr>
             `;
           }).join('');
           if (allTable) allTable.innerHTML = allRows;
+        } else {
+          if (table) table.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); text-align:center;">No active alerts. Run simulation to trigger detections.</td></tr>';
+          if (allTable) allTable.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No alerts registered in local AlertStore.</td></tr>';
         }
       })
       .catch(() => {});
 
-    // Fetch detections for MITRE table
+    // 3. Fetch incidents
+    fetch('/api/v1/incidents?limit=50')
+      .then(r => r.json())
+      .then(data => {
+        const recTable = document.getElementById('recent-incidents-table');
+        const allTable = document.getElementById('all-incidents-table');
+        if (data.incidents && data.incidents.length > 0) {
+          const recRows = data.incidents.slice(0, 10).map(i => {
+            const sevBadge = i.severity === 'high' || i.severity === 'critical' ? 'badge-critical' : 'badge-medium';
+            return `
+              <tr>
+                <td><code>${escapeHtml(i.incident_id)}</code></td>
+                <td><span class="badge ${sevBadge}">${escapeHtml(i.severity.toUpperCase())}</span></td>
+                <td><strong>${escapeHtml(i.title)}</strong></td>
+                <td><span class="badge badge-info">${escapeHtml(i.status.toUpperCase())}</span></td>
+              </tr>
+            `;
+          }).join('');
+          if (recTable) recTable.innerHTML = recRows;
+
+          const allRows = data.incidents.map(i => {
+            const sevBadge = i.severity === 'high' || i.severity === 'critical' ? 'badge-critical' : 'badge-medium';
+            return `
+              <tr>
+                <td><code>${escapeHtml(i.incident_id)}</code></td>
+                <td><span class="badge ${sevBadge}">${escapeHtml(i.severity.toUpperCase())}</span></td>
+                <td><span class="badge badge-info">${escapeHtml(i.status.toUpperCase())}</span></td>
+                <td><strong>${escapeHtml(i.title)}</strong></td>
+                <td><span class="badge ${i.containment_status === 'contained' ? 'badge-success' : 'badge-low'}">${escapeHtml((i.containment_status || 'uncontained').toUpperCase())}</span></td>
+                <td><span class="badge ${i.remediation_status === 'remediated' ? 'badge-success' : 'badge-low'}">${escapeHtml((i.remediation_status || 'pending').toUpperCase())}</span></td>
+                <td>
+                  <a href="/api/v1/reports/incident/${encodeURIComponent(i.incident_id)}?format=html" target="_blank" class="btn btn-secondary btn-sm">📄 Report</a>
+                </td>
+              </tr>
+            `;
+          }).join('');
+          if (allTable) allTable.innerHTML = allRows;
+        } else {
+          if (recTable) recTable.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); text-align:center;">No open incidents.</td></tr>';
+          if (allTable) allTable.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No incidents stored.</td></tr>';
+        }
+      })
+      .catch(() => {});
+
+    // 4. Fetch SOAR audit log
+    fetch('/api/v1/audit?limit=20')
+      .then(r => r.json())
+      .then(data => {
+        const auditTable = document.getElementById('audit-log-table');
+        if (auditTable) {
+          if (data.entries && data.entries.length > 0) {
+            auditTable.innerHTML = data.entries.map(e => `
+              <tr>
+                <td><code>${escapeHtml(e.id)}</code></td>
+                <td>${escapeHtml(e.timestamp)}</td>
+                <td><code>${escapeHtml(e.action)}</code></td>
+                <td>${escapeHtml(e.actor)}</td>
+                <td><code>${escapeHtml(e.target)}</code></td>
+                <td><span class="badge ${e.result === 'success' ? 'badge-success' : 'badge-critical'}">${escapeHtml(e.result.toUpperCase())}</span></td>
+                <td>${escapeHtml(e.reason || 'Automated Playbook Execution')}</td>
+              </tr>
+            `).join('');
+          } else {
+            auditTable.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No response actions executed yet.</td></tr>';
+          }
+        }
+      })
+      .catch(() => {});
+
+    // 5. Fetch detections for MITRE table
     fetch('/api/v1/detections')
       .then(r => r.json())
       .then(data => {
@@ -1045,7 +1168,7 @@ def render_dashboard_html() -> str:
       })
       .catch(() => {});
 
-    // Fetch health status
+    // 6. Fetch health status
     fetch('/api/v1/health/deep')
       .then(r => r.json())
       .then(data => {
