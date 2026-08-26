@@ -47,23 +47,25 @@ class LinuxServerService:
     ) -> bool:
         """Simulate SSH authentication attempt with SSHD syslog generation."""
         is_success = False
+        now_ts = datetime.now(timezone.utc)
+        syslog_ts = now_ts.strftime("%b %d %H:%M:%S")
 
         if username == "root" and self.config.ssh.permit_root_login == "no":
             is_success = False
-            raw_msg = f"<85>Aug 19 12:00:00 {self.config.hostname} sshd[12345]: Failed password for root from {source_ip} port {source_port} ssh2 (PermitRootLogin=no)"
+            raw_msg = f"<85>{syslog_ts} {self.config.hostname} sshd[12345]: Failed password for root from {source_ip} port {source_port} ssh2 (PermitRootLogin=no)"
         elif password and self.local_users.get(username) == password:
             is_success = True
-            raw_msg = f"<86>Aug 19 12:00:00 {self.config.hostname} sshd[12345]: Accepted password for {username} from {source_ip} port {source_port} ssh2"
+            raw_msg = f"<86>{syslog_ts} {self.config.hostname} sshd[12345]: Accepted password for {username} from {source_ip} port {source_port} ssh2"
         elif (
             key_fingerprint
             and username in self.local_users
             and username != "root"
         ):
             is_success = True
-            raw_msg = f"<86>Aug 19 12:00:00 {self.config.hostname} sshd[12345]: Accepted publickey for {username} from {source_ip} port {source_port} ssh2: RSA {key_fingerprint}"
+            raw_msg = f"<86>{syslog_ts} {self.config.hostname} sshd[12345]: Accepted publickey for {username} from {source_ip} port {source_port} ssh2: RSA {key_fingerprint}"
         else:
             is_success = False
-            raw_msg = f"<85>Aug 19 12:00:00 {self.config.hostname} sshd[12345]: Failed password for invalid user {username} from {source_ip} port {source_port} ssh2"
+            raw_msg = f"<85>{syslog_ts} {self.config.hostname} sshd[12345]: Failed password for invalid user {username} from {source_ip} port {source_port} ssh2"
 
         # Emit telemetry
         self._emit_syslog(raw_msg, source_ip=self.config.ip_address)
@@ -104,11 +106,15 @@ class LinuxServerService:
             EventSeverity.HIGH if is_suspicious else EventSeverity.INFORMATIONAL
         )
 
+        now_ts = datetime.now(timezone.utc)
+        syslog_ts = now_ts.strftime("%b %d %H:%M:%S")
+        epoch_ts = now_ts.timestamp()
+
         if is_sudo:
-            sudo_msg = f"<86>Aug 19 12:01:00 {self.config.hostname} sudo[14199]: {user} : TTY=pts/0 ; PWD=/home/{user} ; USER=root ; COMMAND={command_line}"
+            sudo_msg = f"<86>{syslog_ts} {self.config.hostname} sudo[14199]: {user} : TTY=pts/0 ; PWD=/home/{user} ; USER=root ; COMMAND={command_line}"
             self._emit_syslog(sudo_msg, source_ip=self.config.ip_address)
 
-        audit_msg = f"<134>Aug 19 12:01:00 {self.config.hostname} auditd[800]: type=EXECVE msg=audit(1692440000.000:101): argc=1 a0=\"{command_line}\" pid={pid} comm=\"{command_line.split()[0]}\""
+        audit_msg = f"<134>{syslog_ts} {self.config.hostname} auditd[800]: type=EXECVE msg=audit({epoch_ts:.3f}:101): argc=1 a0=\"{command_line}\" pid={pid} comm=\"{command_line.split()[0]}\""
         self._emit_syslog(audit_msg, source_ip=self.config.ip_address)
 
         if self.siem_collector:
