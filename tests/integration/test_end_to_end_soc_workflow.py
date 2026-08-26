@@ -139,7 +139,7 @@ def test_complete_end_to_end_soc_lifecycle():
     assert metrics.total_telemetry_events >= 1
     assert metrics.total_alerts >= 1
     assert metrics.total_incidents >= 1
-    assert metrics.mttd_seconds >= 0.0
-    assert metrics.mttr_seconds >= 0.0
+    assert 0.0 <= metrics.mttd_seconds < 10.0
+    assert 0.0 <= metrics.mttr_seconds < 10.0
     assert metrics.detection_rate_percent == 100.0
     assert metrics.system_health_score == 100.0
