@@ -305,10 +305,11 @@ def test_incident_resolution_flow_updates_metrics():
     assert inv_resp.status_code == 200
     inc_id = inv_resp.json()["incident_id"]
 
-    # Metric check: Open incident = 1, Remediated = 0
+    # Metric check: Open incident = 1, Remediated = 0, Active alerts = 1
     m1 = client.get("/api/v1/metrics/soc").json()
     assert m1["open_incidents"] == 1
     assert m1["remediated_incidents"] == 0
+    assert m1["total_alerts"] == 1
 
     # 3. Resolve incident upon 7-step investigation completion
     res_resp = client.post(f"/api/v1/incidents/{inc_id}/resolve")
@@ -318,10 +319,11 @@ def test_incident_resolution_flow_updates_metrics():
     assert res_data["containment_status"] == "contained"
     assert res_data["remediation_status"] == "remediated"
 
-    # Metric check: Open incident drops to 0, Remediated increments to 1
+    # Metric check: Open incident drops to 0, Remediated increments to 1, Active alerts drops to 0
     m2 = client.get("/api/v1/metrics/soc").json()
     assert m2["open_incidents"] == 0
     assert m2["remediated_incidents"] == 1
+    assert m2["total_alerts"] == 0
 
 
 def test_investigate_endpoint_reuses_existing_incident():
@@ -351,4 +353,23 @@ def test_investigate_endpoint_reuses_existing_incident():
 
     assert inc_id_1 == inc_id_2
     assert inc_store.count() == 1
+
+
+def test_dashboard_html_structure_updates():
+    """Verify reset baseline button is removed and investigation multi-incident queue is rendered."""
+    app = create_siem_app()
+    client = TestClient(app)
+
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Verify reset button is removed
+    assert 'id="btn-reset"' not in html
+    assert 'Reset Baseline' not in html
+
+    # Verify multi-incident queue and workflow elements are present
+    assert 'id="investigation-incidents-selector"' in html
+    assert 'id="investigate-incidents-badge"' in html
+    assert 'id="investigation-workflow-container"' in html
 
