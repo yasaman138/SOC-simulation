@@ -562,9 +562,9 @@ def create_siem_app(
         return {
             "status": "success",
             "incident_id": inc.incident_id,
+            "incident_status": inc.status.value,
             "containment_status": inc.containment_status.value,
             "remediation_status": inc.remediation_status.value,
-            "status": inc.status.value,
         }
 
     @app.post("/api/v1/incidents/{incident_id}/respond", tags=["Incidents"])
